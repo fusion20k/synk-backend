@@ -71,12 +71,14 @@ app.get('/oauth2callback', async (req, res) => {
   
   if (error) {
     console.error('[OAuth2Callback] OAuth error from Google:', error);
-    return res.status(400).send(`OAuth error: ${error}`);
+    const errorUrl = `https://synk-official.com/oauth-error.html?error=${encodeURIComponent(error)}&error_description=${encodeURIComponent(req.query.error_description || 'OAuth authorization failed')}`;
+    return res.redirect(errorUrl);
   }
   
   if (!code || !state) {
     console.error('[OAuth2Callback] Missing required parameters:', { code: !!code, state: !!state });
-    return res.status(400).send('Missing code or state');
+    const errorUrl = `https://synk-official.com/oauth-error.html?error=missing_parameters&error_description=${encodeURIComponent('Missing authorization code or state parameter')}`;
+    return res.redirect(errorUrl);
   }
 
   try {
@@ -85,7 +87,7 @@ app.get('/oauth2callback', async (req, res) => {
     oauthResults[state] = { tokens, createdAt: Date.now() };
     console.log('[OAuth2Callback] tokens stored for state:', state);
     console.log('[OAuth2Callback] token types received:', Object.keys(tokens));
-    return res.send('<html><body><h2>✅ Synk connected successfully — close this tab.</h2></body></html>');
+    return res.redirect('https://synk-official.com/oauth-success.html');
   } catch (err) {
     console.error('[OAuth2Callback] token exchange error details:', {
       message: err.message,
@@ -93,7 +95,8 @@ app.get('/oauth2callback', async (req, res) => {
       status: err.status,
       response: err.response?.data
     });
-    return res.status(500).send(`OAuth token exchange failed: ${err.message}`);
+    const errorUrl = `https://synk-official.com/oauth-error.html?error=token_exchange_failed&error_description=${encodeURIComponent(err.message)}`;
+    return res.redirect(errorUrl);
   }
 });
 
