@@ -34,7 +34,7 @@ const oauth2Client = new google.auth.OAuth2(
 );
 
 // Notion OAuth configuration
-const NOTION_REDIRECT_URI = `${BACKEND_URL}/oauth2callback/notion`;
+const NOTION_REDIRECT_URI = process.env.NOTION_REDIRECT_URI || `${BACKEND_URL}/oauth2callback/notion`;
 console.log('[Notion OAuth] Configuration:');
 console.log('[Notion OAuth] REDIRECT_URI:', NOTION_REDIRECT_URI);
 console.log('[Notion OAuth] CLIENT_ID:', process.env.NOTION_CLIENT_ID ? 'SET' : 'NOT SET');
