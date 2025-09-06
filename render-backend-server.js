@@ -1,6 +1,7 @@
 const express = require('express');
 const cors = require('cors');
 const { google } = require('googleapis');
+const fetch = require('node-fetch');
 require('dotenv').config();
 
 const app = express();
@@ -32,6 +33,13 @@ const oauth2Client = new google.auth.OAuth2(
   REDIRECT_URI
 );
 
+// Notion OAuth configuration
+const NOTION_REDIRECT_URI = `${BACKEND_URL}/oauth2callback/notion`;
+console.log('[Notion OAuth] Configuration:');
+console.log('[Notion OAuth] REDIRECT_URI:', NOTION_REDIRECT_URI);
+console.log('[Notion OAuth] CLIENT_ID:', process.env.NOTION_CLIENT_ID ? 'SET' : 'NOT SET');
+console.log('[Notion OAuth] CLIENT_SECRET:', process.env.NOTION_CLIENT_SECRET ? 'SET' : 'NOT SET');
+
 // Routes
 app.get('/', (req, res) => {
   res.json({ 
@@ -40,7 +48,9 @@ app.get('/', (req, res) => {
     endpoints: [
       'GET /_health',
       'GET /auth/google',
+      'GET /auth/notion',
       'GET /oauth2callback',
+      'GET /oauth2callback/notion',
       'GET /api/oauth/result'
     ]
   });
@@ -61,6 +71,21 @@ app.get('/auth/google', (req, res) => {
   });
   
   console.log('[Auth] Generated auth URL for state:', state);
+  res.redirect(authUrl);
+});
+
+// Notion OAuth initiation
+app.get('/auth/notion', (req, res) => {
+  const state = req.query.state || Math.random().toString(36).substring(7);
+  
+  const authUrl = `https://api.notion.com/v1/oauth/authorize?` +
+    `client_id=${process.env.NOTION_CLIENT_ID}&` +
+    `response_type=code&` +
+    `owner=user&` +
+    `redirect_uri=${encodeURIComponent(NOTION_REDIRECT_URI)}&` +
+    `state=${state}`;
+  
+  console.log('[Notion Auth] Generated auth URL for state:', state);
   res.redirect(authUrl);
 });
 
@@ -90,6 +115,61 @@ app.get('/oauth2callback', async (req, res) => {
     return res.redirect('https://synk-official.com/oauth-success.html');
   } catch (err) {
     console.error('[OAuth2Callback] token exchange error details:', {
+      message: err.message,
+      code: err.code,
+      status: err.status,
+      response: err.response?.data
+    });
+    const errorUrl = `https://synk-official.com/oauth-error.html?error=token_exchange_failed&error_description=${encodeURIComponent(err.message)}`;
+    return res.redirect(errorUrl);
+  }
+});
+
+// Notion OAuth callback route
+app.get('/oauth2callback/notion', async (req, res) => {
+  console.log('[NotionOAuth2Callback] incoming request', { query: req.query });
+  const { code, state, error } = req.query;
+  
+  if (error) {
+    console.error('[NotionOAuth2Callback] OAuth error from Notion:', error);
+    const errorUrl = `https://synk-official.com/oauth-error.html?error=${encodeURIComponent(error)}&error_description=${encodeURIComponent(req.query.error_description || 'Notion OAuth authorization failed')}`;
+    return res.redirect(errorUrl);
+  }
+  
+  if (!code || !state) {
+    console.error('[NotionOAuth2Callback] Missing required parameters:', { code: !!code, state: !!state });
+    const errorUrl = `https://synk-official.com/oauth-error.html?error=missing_parameters&error_description=${encodeURIComponent('Missing authorization code or state parameter')}`;
+    return res.redirect(errorUrl);
+  }
+
+  try {
+    console.log('[NotionOAuth2Callback] Attempting token exchange with redirect URI:', NOTION_REDIRECT_URI);
+    
+    const tokenResponse = await fetch('https://api.notion.com/v1/oauth/token', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Basic ${Buffer.from(`${process.env.NOTION_CLIENT_ID}:${process.env.NOTION_CLIENT_SECRET}`).toString('base64')}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        grant_type: 'authorization_code',
+        code: code,
+        redirect_uri: NOTION_REDIRECT_URI,
+      }),
+    });
+
+    const tokens = await tokenResponse.json();
+    
+    if (!tokenResponse.ok) {
+      throw new Error(`Token exchange failed: ${tokens.error || 'Unknown error'}`);
+    }
+    
+    oauthResults[state] = { tokens, createdAt: Date.now() };
+    console.log('[NotionOAuth2Callback] tokens stored for state:', state);
+    console.log('[NotionOAuth2Callback] token types received:', Object.keys(tokens));
+    return res.redirect('https://synk-official.com/oauth-success.html');
+  } catch (err) {
+    console.error('[NotionOAuth2Callback] token exchange error details:', {
       message: err.message,
       code: err.code,
       status: err.status,
