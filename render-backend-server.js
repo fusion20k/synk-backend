@@ -17,11 +17,19 @@ app.use(cors({
 app.use(express.json());
 
 // OAuth2 client setup
-const BACKEND_URL = process.env.BACKEND_URL || 'https://synk-backend.onrender.com';
+const BACKEND_URL = process.env.BACKEND_URL || 'https://synk-web.onrender.com';
+const REDIRECT_URI = `${BACKEND_URL}/oauth2callback`;
+
+console.log('[OAuth2] Configuration:');
+console.log('[OAuth2] BACKEND_URL:', BACKEND_URL);
+console.log('[OAuth2] REDIRECT_URI:', REDIRECT_URI);
+console.log('[OAuth2] CLIENT_ID:', process.env.GOOGLE_CLIENT_ID ? 'SET' : 'NOT SET');
+console.log('[OAuth2] CLIENT_SECRET:', process.env.GOOGLE_CLIENT_SECRET ? 'SET' : 'NOT SET');
+
 const oauth2Client = new google.auth.OAuth2(
   process.env.GOOGLE_CLIENT_ID,
   process.env.GOOGLE_CLIENT_SECRET,
-  `${BACKEND_URL}/oauth2callback`
+  REDIRECT_URI
 );
 
 // Routes
@@ -59,17 +67,33 @@ app.get('/auth/google', (req, res) => {
 // OAuth2 callback route
 app.get('/oauth2callback', async (req, res) => {
   console.log('[OAuth2Callback] incoming request', { query: req.query });
-  const { code, state } = req.query;
-  if (!code || !state) return res.status(400).send('Missing code or state');
+  const { code, state, error } = req.query;
+  
+  if (error) {
+    console.error('[OAuth2Callback] OAuth error from Google:', error);
+    return res.status(400).send(`OAuth error: ${error}`);
+  }
+  
+  if (!code || !state) {
+    console.error('[OAuth2Callback] Missing required parameters:', { code: !!code, state: !!state });
+    return res.status(400).send('Missing code or state');
+  }
 
   try {
+    console.log('[OAuth2Callback] Attempting token exchange with redirect URI:', REDIRECT_URI);
     const { tokens } = await oauth2Client.getToken(code);
     oauthResults[state] = { tokens, createdAt: Date.now() };
     console.log('[OAuth2Callback] tokens stored for state:', state);
-    return res.send('<html><body><h2>Synk connected — close this tab.</h2></body></html>');
+    console.log('[OAuth2Callback] token types received:', Object.keys(tokens));
+    return res.send('<html><body><h2>✅ Synk connected successfully — close this tab.</h2></body></html>');
   } catch (err) {
-    console.error('[OAuth2Callback] token exchange error:', err && err.message);
-    return res.status(500).send('OAuth token exchange failed');
+    console.error('[OAuth2Callback] token exchange error details:', {
+      message: err.message,
+      code: err.code,
+      status: err.status,
+      response: err.response?.data
+    });
+    return res.status(500).send(`OAuth token exchange failed: ${err.message}`);
   }
 });
 
