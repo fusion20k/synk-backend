@@ -78,12 +78,17 @@ app.get('/auth/google', (req, res) => {
 app.get('/auth/notion', (req, res) => {
   const state = req.query.state || Math.random().toString(36).substring(7);
   
+  // Try the old redirect URI that might be configured in Notion OAuth app
+  const testRedirectUri = 'https://synk-official.com/oauth2callback';
+  
   const authUrl = `https://api.notion.com/v1/oauth/authorize?` +
     `client_id=${process.env.NOTION_CLIENT_ID}&` +
     `response_type=code&` +
     `owner=user&` +
-    `redirect_uri=${encodeURIComponent(NOTION_REDIRECT_URI)}&` +
+    `redirect_uri=${encodeURIComponent(testRedirectUri)}&` +
     `state=${state}`;
+  
+  console.log('[Notion Auth] Using redirect URI:', testRedirectUri);
   
   console.log('[Notion Auth] Generated auth URL for state:', state);
   res.redirect(authUrl);
