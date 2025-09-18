@@ -2,6 +2,8 @@ const express = require('express');
 const cors = require('cors');
 const { google } = require('googleapis');
 const fetch = require('node-fetch');
+const bcrypt = require('bcryptjs');
+const jwt = require('jsonwebtoken');
 require('dotenv').config();
 
 const app = express();
@@ -12,7 +14,7 @@ console.log('[Server] BACKEND_URL=', process.env.BACKEND_URL || 'NOT SET');
 
 // Middleware
 app.use(cors({
-  origin: ['https://synk-official.com', 'http://localhost:3000', 'https://synk-backend.onrender.com'],
+  origin: ['https://synk-official.com', 'http://localhost:3000', 'https://synk-web.onrender.com'],
   credentials: true
 }));
 app.use(express.json());
@@ -40,6 +42,44 @@ console.log('[Notion OAuth] REDIRECT_URI:', NOTION_REDIRECT_URI);
 console.log('[Notion OAuth] CLIENT_ID:', process.env.NOTION_CLIENT_ID ? 'SET' : 'NOT SET');
 console.log('[Notion OAuth] CLIENT_SECRET:', process.env.NOTION_CLIENT_SECRET ? 'SET' : 'NOT SET');
 
+// Supabase client + auth helpers
+const { createClient } = require('@supabase/supabase-js');
+const SUPABASE_URL = process.env.SUPABASE_URL;
+const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY;
+const supabase = (SUPABASE_URL && SUPABASE_SERVICE_ROLE_KEY)
+  ? createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, { auth: { persistSession: false } })
+  : null;
+if (!supabase) console.warn('[Supabase] Not configured');
+
+const JWT_SECRET = process.env.JWT_SECRET || 'REPLACE_ME';
+function authMiddleware(req, res, next) {
+  const auth = req.headers.authorization || '';
+  const token = auth.startsWith('Bearer ') ? auth.slice(7) : null;
+  if (!token) return res.status(401).json({ success: false, error: 'missing_token' });
+  try {
+    req.user = jwt.verify(token, JWT_SECRET);
+    return next();
+  } catch {
+    return res.status(401).json({ success: false, error: 'invalid_token' });
+  }
+}
+async function getUserByEmail(email) {
+  if (!supabase) return null;
+  const { data, error } = await supabase.from('users').select('*').eq('email', email).maybeSingle();
+  if (error) throw error;
+  return data || null;
+}
+async function insertUser(row) {
+  if (!supabase) return;
+  const { error } = await supabase.from('users').insert(row);
+  if (error) throw error;
+}
+async function updateUser(email, patch) {
+  if (!supabase) return;
+  const { error } = await supabase.from('users').update(patch).eq('email', email);
+  if (error) throw error;
+}
+
 // Routes
 app.get('/', (req, res) => {
   res.json({ 
@@ -47,6 +87,9 @@ app.get('/', (req, res) => {
     status: 'running',
     endpoints: [
       'GET /_health',
+      'POST /signup',
+      'POST /login',
+      'GET /me',
       'GET /auth/google',
       'GET /auth/notion',
       'GET /oauth2callback',
@@ -58,6 +101,70 @@ app.get('/', (req, res) => {
 
 // Health check endpoint
 app.get('/_health', (req, res) => res.json({ ok: true, host: BACKEND_URL }));
+
+// Signup
+app.post('/signup', async (req, res) => {
+  try {
+    const { email, password } = req.body || {};
+    if (!email || !password) return res.status(400).json({ success: false, error: 'missing_params' });
+
+    const existing = await getUserByEmail(email);
+    if (existing) return res.status(409).json({ success: false, error: 'user_exists' });
+
+    const password_hash = await bcrypt.hash(password, 10);
+
+    const trial_end = new Date(Date.now() + 14*24*60*60*1000).toISOString();
+    const row = { email, password_hash, plan: 'pro', billing_period: 'trial', trial_end };
+    await insertUser(row);
+
+    const token = jwt.sign({ email }, JWT_SECRET, { expiresIn: '30d' });
+    return res.json({ success: true, token, user: { email } });
+  } catch (e) {
+    console.error('[POST /signup] Error:', e.message);
+    return res.status(500).json({ success: false, error: 'server_error' });
+  }
+});
+
+// Login
+app.post('/login', async (req, res) => {
+  try {
+    const { email, password } = req.body || {};
+    if (!email || !password) return res.status(400).json({ success: false, error: 'missing_params' });
+
+    const userRow = await getUserByEmail(email);
+    if (!userRow) return res.status(401).json({ success: false, error: 'invalid_credentials' });
+
+    const ok = await bcrypt.compare(password, userRow.password_hash || '');
+    if (!ok) return res.status(401).json({ success: false, error: 'invalid_credentials' });
+
+    const token = jwt.sign({ email }, JWT_SECRET, { expiresIn: '30d' });
+    return res.json({ success: true, token, user: { email } });
+  } catch (e) {
+    console.error('[POST /login] Error:', e.message);
+    return res.status(500).json({ success: false, error: 'server_error' });
+  }
+});
+
+// /me - plan source of truth
+app.get('/me', authMiddleware, async (req, res) => {
+  try {
+    const email = req.user.email;
+    const u = await getUserByEmail(email);
+    if (!u) return res.status(404).json({ success: false, error: 'user_not_found' });
+
+    // Expire trial if needed
+    if (u.trial_end && new Date() > new Date(u.trial_end) && u.billing_period === 'trial') {
+      await updateUser(email, { plan: null, billing_period: null, trial_end: null });
+      u.plan = null; u.billing_period = null; u.trial_end = null;
+    }
+
+    const plan = u.plan ? { type: u.plan, billingCycle: u.billing_period } : null;
+    return res.json({ success: true, plan, billing_period: u.billing_period, trial_end: u.trial_end });
+  } catch (e) {
+    console.error('[GET /me] Error:', e.message);
+    return res.status(500).json({ success: false, error: 'server_error' });
+  }
+});
 
 // Google OAuth initiation
 app.get('/auth/google', (req, res) => {
