@@ -8,6 +8,10 @@ const jwt = require('jsonwebtoken');
 require('dotenv').config();
 
 const app = express();
+app.post('/webhook', express.raw({type: 'application/json'}), (request, response) => {
+  console.log("[Stripe Webhook] POST request received at /webhook endpoint.");
+  response.json({received: true});
+});
 
 // At top of server file
 const oauthResults = {}; // { state: { tokens, createdAt } }
