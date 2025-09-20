@@ -1,27 +1,240 @@
-console.log("🟢 LIVE: render-backend-server.js is starting up...");
 const express = require('express');
 const cors = require('cors');
 const { google } = require('googleapis');
 const fetch = require('node-fetch');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
+const Stripe = require('stripe');
 require('dotenv').config();
 
 const app = express();
-app.post('/webhook', express.raw({type: 'application/json'}), (request, response) => {
-  console.log("[Stripe Webhook] POST request received at /webhook endpoint.");
+
+// Replace the entire existing /webhook route with this code
+app.post('/webhook', express.raw({type: 'application/json'}), async (request, response) => {
+  const sig = request.headers['stripe-signature'];
+  const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET; // Get secret from environment variable
+  let event;
+  console.log("[Stripe Webhook] POST request received. Attempting to verify signature...");
+  // 1. SECURITY: Verify the request is genuinely from Stripe
+  try {
+    event = stripe.webhooks.constructEvent(request.body, sig, webhookSecret);
+    console.log(`✅ [Stripe Webhook] Signature Verification SUCCESS for event: ${event.type}`);
+  } catch (err) {
+    // If verification fails, log the error and stop execution
+    console.log(`❌ [Stripe Webhook] Signature Verification FAILED. Error: ${err.message}`);
+    return response.status(400).send(`Webhook Error: ${err.message}`);
+  }
+  // 2. Immediately acknowledge receipt to prevent Stripe retries
   response.json({received: true});
+  // 3. Handle the specific event type
+  switch (event.type) {
+    case 'checkout.session.completed':
+      console.log("💰 [Stripe Webhook] Handling checkout.session.completed event.");
+      const session = event.data.object;
+      // TODO: FIND THE USER AND UPDATE THEIR STATUS IN SUPABASE
+      // The most reliable way is by the client_reference_id, which should be the user's ID
+      const userId = session.client_reference_id;
+      if (userId) {
+        // Use the Supabase client to update the user's record
+        // REPLACE 'subscription_status' WITH YOUR ACTUAL COLUMN NAME
+        const { error } = await supabase
+          .from('users')
+          .update({ subscription_status: 'active' })
+          .eq('id', userId);
+        if (error) {
+          console.error("❌ [Stripe Webhook] Failed to update user in Supabase:", error);
+        } else {
+          console.log(`✅ [Stripe Webhook] Successfully updated user ${userId} to 'active' status.`);
+        }
+      } else {
+        console.log("❌ [Stripe Webhook] Could not find user ID (client_reference_id) in session.");
+      }
+      break;
+    // You can add other event types later (invoice.paid, customer.subscription.deleted, etc.)
+    default:
+      console.log(`🤔 [Stripe Webhook] Unhandled event type: ${event.type}`);
+  }
 });
 
 // At top of server file
 const oauthResults = {}; // { state: { tokens, createdAt } }
 console.log('[Server] BACKEND_URL=', process.env.BACKEND_URL || 'NOT SET');
 
+// Initialize Stripe (optional)
+const stripeSecret = process.env.STRIPE_SECRET_KEY || '';
+const stripeWebhookSecret = process.env.STRIPE_WEBHOOK_SECRET || '';
+const stripe = stripeSecret ? new Stripe(stripeSecret) : null;
+
 // Middleware
 app.use(cors({
   origin: ['https://synk-official.com', 'http://localhost:3000', 'https://synk-web.onrender.com'],
   credentials: true
 }));
+
+// Health check to verify server receives traffic
+app.get('/stripe/ping', (req, res) => {
+  console.log('[Stripe] Ping received');
+  res.json({ ok: true });
+});
+
+// Stripe webhook must use raw body and be before express.json()
+{
+  // Helpful GET for browser checks (Stripe uses POST). Returns simple OK.
+  app.get('/stripe/webhook', (req, res) => {
+    console.log('[Stripe] GET /stripe/webhook (debug)');
+    res.status(200).send('Stripe webhook endpoint is up. Use POST from Stripe.');
+  });
+
+  const webhookPaths = [
+    '/stripe/webhook', '/stripe/webhook/',
+    '/webhooks/stripe', '/webhooks/stripe/',
+    '/api/stripe/webhook', '/api/stripe/webhook/',
+    '/api/webhooks/stripe', '/api/webhooks/stripe/',
+    '/webhook', '/webhook/'
+  ];
+
+  webhookPaths.forEach((p) => {
+    app.get(p, (req, res) => {
+      console.log(`[Stripe] GET ${p} (debug)`);
+      res.status(200).send(`Stripe webhook endpoint is up at ${p}. Use POST from Stripe.`);
+    });
+  });
+
+  webhookPaths.forEach((p) => app.head(p, (req, res) => {
+    console.log(`[Stripe] HEAD ${p} (debug)`);
+    res.status(200).send('OK');
+  }));
+
+  webhookPaths.forEach((p) => app.post(p, express.raw({ type: '*/*' }), async (req, res) => {
+    console.log('[Stripe] Webhook hit');
+    const sig = req.headers['stripe-signature'];
+    let event;
+    try {
+      event = stripe.webhooks.constructEvent(req.body, sig, stripeWebhookSecret);
+      console.log('[Stripe] Event verified:', event.type);
+    } catch (err) {
+      console.error('[Stripe] Webhook signature verification failed:', err.message);
+      return res.status(400).send(`Webhook Error: ${err.message}`);
+    }
+
+    try {
+      // Helper to map price IDs to plan + billing_period
+      // Supports both STRIPE_PRICE_* and legacy *_PRICE names
+      const PRICE_IDS = {
+        PRO_MONTHLY: process.env.STRIPE_PRICE_PRO_MONTHLY || process.env.PRO_MONTHLY_PRICE || '',
+        PRO_YEARLY: process.env.STRIPE_PRICE_PRO_YEARLY || process.env.PRO_YEARLY_PRICE || '',
+        ULTIMATE_MONTHLY: process.env.STRIPE_PRICE_ULTIMATE_MONTHLY || process.env.ULTIMATE_MONTHLY_PRICE || '',
+        ULTIMATE_YEARLY: process.env.STRIPE_PRICE_ULTIMATE_YEARLY || process.env.ULTIMATE_YEARLY_PRICE || '',
+      };
+      const PRICE_TO_PLAN = {};
+      if (PRICE_IDS.PRO_MONTHLY) PRICE_TO_PLAN[PRICE_IDS.PRO_MONTHLY] = { plan: 'pro', billing_period: 'monthly' };
+      if (PRICE_IDS.PRO_YEARLY) PRICE_TO_PLAN[PRICE_IDS.PRO_YEARLY] = { plan: 'pro', billing_period: 'yearly' };
+      if (PRICE_IDS.ULTIMATE_MONTHLY) PRICE_TO_PLAN[PRICE_IDS.ULTIMATE_MONTHLY] = { plan: 'ultimate', billing_period: 'monthly' };
+      if (PRICE_IDS.ULTIMATE_YEARLY) PRICE_TO_PLAN[PRICE_IDS.ULTIMATE_YEARLY] = { plan: 'ultimate', billing_period: 'yearly' };
+
+      async function applySubscriptionToUser({ priceId, status, customerId, emailHint }) {
+        if (!stripe || !supabase) return;
+        let email = emailHint || null;
+        try {
+          if (!email && customerId) {
+            const customer = await stripe.customers.retrieve(customerId);
+            email = customer && (customer.email || customer.billing_details?.email || customer.shipping?.email);
+          }
+        } catch (e) {
+          console.warn('[Stripe] Failed to retrieve customer for email mapping:', e.message);
+        }
+        if (!email) {
+          console.warn('[Stripe] No email resolved for subscription mapping');
+          return;
+        }
+
+        const mapping = PRICE_TO_PLAN[priceId] || null;
+        if (!mapping) {
+          console.warn('[Stripe] Unknown priceId, leaving plan unchanged:', priceId);
+          return;
+        }
+
+        // Ensure user exists; if not, pre-create placeholder row so order doesn't matter
+        let userRow = null;
+        try {
+          userRow = await getUserByEmail(email);
+        } catch (e) {
+          console.error('[Stripe] getUserByEmail error:', e.message);
+        }
+        if (!userRow) {
+          try {
+            await insertUser({ email, password_hash: null, plan: null, billing_period: null, trial_end: null });
+            console.log('[Stripe] Placeholder user created for', email);
+          } catch (e) {
+            console.error('[Stripe] insertUser error:', e.message);
+          }
+        }
+
+        // If subscription is active, set plan; if canceled/unpaid, clear plan
+        try {
+          if (status === 'active' || status === 'trialing' || status === 'past_due') {
+            await updateUser(email, { plan: mapping.plan, billing_period: mapping.billing_period, trial_end: null });
+            console.log('[Stripe] Plan set for', email, mapping.plan, mapping.billing_period);
+          } else {
+            await updateUser(email, { plan: null, billing_period: null, trial_end: null });
+            console.log('[Stripe] Plan cleared for', email, status);
+          }
+        } catch (e) {
+          console.error('[Stripe] updateUser error:', e.message);
+        }
+      }
+
+      switch (event.type) {
+        case 'checkout.session.completed': {
+          const session = event.data.object;
+          // Try to get email from session first
+          const emailHint = session.customer_details?.email || session.customer_email || null;
+          // Retrieve subscription to get price ID
+          if (session.subscription) {
+            const sub = await stripe.subscriptions.retrieve(session.subscription);
+            const item = sub.items && sub.items.data && sub.items.data[0];
+            const priceId = item && item.price && item.price.id;
+            await applySubscriptionToUser({ customerId: session.customer, priceId, status: sub.status, emailHint });
+          }
+          break;
+        }
+        case 'customer.subscription.created':
+        case 'customer.subscription.updated':
+        case 'customer.subscription.resumed':
+        case 'customer.subscription.paused':
+        case 'customer.subscription.deleted': {
+          const sub = event.data.object;
+          const item = sub.items && sub.items.data && sub.items.data[0];
+          const priceId = item && item.price && item.price.id;
+          // For these events, we only have customer ID; email is fetched inside
+          await applySubscriptionToUser({ customerId: sub.customer, priceId, status: sub.status });
+          break;
+        }
+        case 'invoice.paid': {
+          const inv = event.data.object;
+          const emailHint = inv.customer_email || inv.customer_details?.email || null;
+          if (inv.subscription) {
+            const sub = await stripe.subscriptions.retrieve(inv.subscription);
+            const item = sub.items && sub.items.data && sub.items.data[0];
+            const priceId = item && item.price && item.price.id;
+            await applySubscriptionToUser({ customerId: sub.customer, priceId, status: sub.status, emailHint });
+          }
+          break;
+        }
+        default:
+          // Ignore other events for now
+          break;
+      }
+
+      res.json({ received: true });
+    } catch (err) {
+      console.error('[Stripe] Webhook handler error:', err);
+      res.status(500).send('Webhook handler error');
+    }
+  });
+}
+
+// JSON parser for remaining routes
 app.use(express.json());
 
 // OAuth2 client setup
@@ -114,7 +327,9 @@ app.post('/signup', async (req, res) => {
     if (!email || !password) return res.status(400).json({ success: false, error: 'missing_params' });
 
     const existing = await getUserByEmail(email);
-    if (existing) return res.status(409).json({ success: false, error: 'user_exists' });
+    if (existing) {
+      return res.status(409).json({ success: false, error: 'user_exists' });
+    }
 
     const password_hash = await bcrypt.hash(password, 10);
 
@@ -139,7 +354,13 @@ app.post('/login', async (req, res) => {
     const userRow = await getUserByEmail(email);
     if (!userRow) return res.status(401).json({ success: false, error: 'invalid_credentials' });
 
-    const ok = await bcrypt.compare(password, userRow.password_hash || '');
+    // If user exists from webhook placeholder (no password yet), allow first login to set password
+    if (!userRow.password_hash) {
+      const password_hash = await bcrypt.hash(password, 10);
+      await updateUser(email, { password_hash });
+    }
+
+    const ok = await bcrypt.compare(password, userRow.password_hash || password); // if freshly set above, this will also pass
     if (!ok) return res.status(401).json({ success: false, error: 'invalid_credentials' });
 
     const token = jwt.sign({ email }, JWT_SECRET, { expiresIn: '30d' });
@@ -147,6 +368,17 @@ app.post('/login', async (req, res) => {
   } catch (e) {
     console.error('[POST /login] Error:', e.message);
     return res.status(500).json({ success: false, error: 'server_error' });
+  }
+});
+
+// Debug endpoint to fetch mapped plan by email (no auth; use only for testing, then remove)
+app.get('/debug/plan/:email', async (req, res) => {
+  try {
+    const { email } = req.params;
+    const u = await getUserByEmail(email);
+    return res.json({ ok: true, u });
+  } catch (e) {
+    return res.status(500).json({ ok: false, error: e.message });
   }
 });
 
@@ -164,7 +396,7 @@ app.get('/me', authMiddleware, async (req, res) => {
     }
 
     const plan = u.plan ? { type: u.plan, billingCycle: u.billing_period } : null;
-    return res.json({ success: true, plan, billing_period: u.billing_period, trial_end: u.trial_end });
+    return res.json({ success: true, email, plan, billing_period: u.billing_period, trial_end: u.trial_end });
   } catch (e) {
     console.error('[GET /me] Error:', e.message);
     return res.status(500).json({ success: false, error: 'server_error' });
