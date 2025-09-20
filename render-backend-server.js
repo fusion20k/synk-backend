@@ -1,3 +1,4 @@
+console.log("🟢 LIVE: render-backend-server.js is starting up...");
 const express = require('express');
 const cors = require('cors');
 const { google } = require('googleapis');
