@@ -184,7 +184,7 @@ app.get('/stripe/ping', (req, res) => {
       console.error('[Stripe] Webhook handler error:', err);
       res.status(500).send('Webhook handler error');
     }
-  });
+  }));
 }
 
 // JSON parser for remaining routes
