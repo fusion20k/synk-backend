@@ -61,7 +61,6 @@ app.post('/webhook', express.raw({type: 'application/json'}), async (request, re
 });
 
 // At top of server file
-const oauthResults = {}; // { state: { tokens, createdAt } }
 console.log('[Server] BACKEND_URL=', process.env.BACKEND_URL || 'NOT SET');
 
 // Initialize Stripe (optional)
