@@ -9,52 +9,7 @@ require('dotenv').config();
 
 const app = express();
 
-// Replace the entire existing /webhook route with this code
-app.post('/webhook', express.raw({type: 'application/json'}), async (request, response) => {
-  const sig = request.headers['stripe-signature'];
-  const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET; // Get secret from environment variable
-  let event;
-  console.log("[Stripe Webhook] POST request received. Attempting to verify signature...");
-  // 1. SECURITY: Verify the request is genuinely from Stripe
-  try {
-    event = stripe.webhooks.constructEvent(request.body, sig, webhookSecret);
-    console.log(`✅ [Stripe Webhook] Signature Verification SUCCESS for event: ${event.type}`);
-  } catch (err) {
-    // If verification fails, log the error and stop execution
-    console.log(`❌ [Stripe Webhook] Signature Verification FAILED. Error: ${err.message}`);
-    return response.status(400).send(`Webhook Error: ${err.message}`);
-  }
-  // 2. Immediately acknowledge receipt to prevent Stripe retries
-  response.json({received: true});
-  // 3. Handle the specific event type
-  switch (event.type) {
-    case 'checkout.session.completed':
-      console.log("💰 [Stripe Webhook] Handling checkout.session.completed event.");
-      const session = event.data.object;
-      // TODO: FIND THE USER AND UPDATE THEIR STATUS IN SUPABASE
-      // The most reliable way is by the client_reference_id, which should be the user's ID
-      const userId = session.client_reference_id;
-      if (userId) {
-        // Use the Supabase client to update the user's record
-        // REPLACE 'subscription_status' WITH YOUR ACTUAL COLUMN NAME
-        const { error } = await supabase
-          .from('users')
-          .update({ subscription_status: 'active' })
-          .eq('id', userId);
-        if (error) {
-          console.error("❌ [Stripe Webhook] Failed to update user in Supabase:", error);
-        } else {
-          console.log(`✅ [Stripe Webhook] Successfully updated user ${userId} to 'active' status.`);
-        }
-      } else {
-        console.log("❌ [Stripe Webhook] Could not find user ID (client_reference_id) in session.");
-      }
-      break;
-    // You can add other event types later (invoice.paid, customer.subscription.deleted, etc.)
-    default:
-      console.log(`🤔 [Stripe Webhook] Unhandled event type: ${event.type}`);
-  }
-});
+
 
 // At top of server file
 const oauthResults = {}; // { state: { tokens, createdAt } }
@@ -265,6 +220,17 @@ app.get('/stripe/ping', (req, res) => {
             const item = sub.items && sub.items.data && sub.items.data[0];
             const priceId = item && item.price && item.price.id;
             await applySubscriptionToUser({ customerId: sub.customer, priceId, status: sub.status, emailHint });
+          }
+          break;
+        }
+        case 'invoice.payment_succeeded': {
+          const inv = event.data.object;
+          const emailHint = inv.customer_email || inv.customer_details?.email || null;
+          if (inv.subscription) {
+            const sub = await stripe.subscriptions.retrieve(inv.subscription);
+            const item = sub.items && sub.items.data && sub.items.data[0];
+            const priceId = item && item.price && item.price.id;
+            await applySubscriptionToUser({ customerId: sub.customer, priceId, status: sub.status, emailHint, subscription: sub });
           }
           break;
         }
