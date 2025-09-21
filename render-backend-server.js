@@ -89,11 +89,16 @@ app.get('/stripe/ping', (req, res) => {
 
       async function applySubscriptionToUser({ priceId, status, customerId, emailHint, subscription }) {
         if (!stripe || !supabase) return;
+        // Normalize email input
+        if (emailHint) {
+          emailHint = emailHint.trim().toLowerCase();
+        }
         let email = emailHint || null;
         try {
           if (!email && customerId) {
             const customer = await stripe.customers.retrieve(customerId);
             email = customer && (customer.email || customer.billing_details?.email || customer.shipping?.email);
+            if (email) email = email.trim().toLowerCase();
           }
         } catch (e) {
           console.warn('[Stripe] Failed to retrieve customer for email mapping:', e.message);
@@ -125,6 +130,16 @@ app.get('/stripe/ping', (req, res) => {
             console.log('[Stripe] Placeholder user created for', email);
           } catch (e) {
             console.error('[Stripe] insertUser error:', e.message);
+          }
+        }
+
+        // Always persist stripe_customer_id when known and we have an email match
+        if (customerId && email) {
+          try {
+            await updateUser(email, { stripe_customer_id: customerId });
+            console.log(`[Stripe] Linked stripe_customer_id ${customerId} to ${email}`);
+          } catch (e) {
+            console.error('[Stripe] Failed to set stripe_customer_id:', e.message);
           }
         }
 
@@ -231,6 +246,30 @@ app.get('/stripe/ping', (req, res) => {
             const item = sub.items && sub.items.data && sub.items.data[0];
             const priceId = item && item.price && item.price.id;
             await applySubscriptionToUser({ customerId: sub.customer, priceId, status: sub.status, emailHint, subscription: sub });
+          }
+          break;
+        }
+        case 'customer.deleted': {
+          try {
+            const customer = event.data.object;
+            const stripeCustomerId = customer.id;
+            console.log(`[Stripe] Customer deleted: ${stripeCustomerId}. Soft-deleting subscription data.`);
+            const { error: updateError } = await supabase
+              .from('users')
+              .update({
+                plan: null,
+                billing_period: null,
+                is_trial: null,
+                trial_end: null,
+                stripe_customer_id: null,
+              })
+              .eq('stripe_customer_id', stripeCustomerId);
+            if (updateError) {
+              throw new Error(updateError.message);
+            }
+            console.log(`[Stripe] Successfully soft-deleted data for customer: ${stripeCustomerId}`);
+          } catch (e) {
+            console.error('[Stripe] Error handling customer.deleted event:', e.message);
           }
           break;
         }
