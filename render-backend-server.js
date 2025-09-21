@@ -132,18 +132,6 @@ app.get('/stripe/ping', (req, res) => {
       if (PRICE_IDS.ULTIMATE_MONTHLY) PRICE_TO_PLAN[PRICE_IDS.ULTIMATE_MONTHLY] = { plan: 'ultimate', billing_period: 'monthly' };
       if (PRICE_IDS.ULTIMATE_YEARLY) PRICE_TO_PLAN[PRICE_IDS.ULTIMATE_YEARLY] = { plan: 'ultimate', billing_period: 'yearly' };
 
-      async function isSubscriptionInTrial(subscriptionId) {
-        if (!stripe) return false;
-        try {
-          const sub = await stripe.subscriptions.retrieve(subscriptionId);
-          // trial if trial_end (unix) is in the future
-          return sub.trial_end && sub.trial_end > Math.floor(Date.now() / 1000);
-        } catch (e) {
-          console.error('[Stripe] Error checking trial status:', e.message);
-          return false;
-        }
-      }
-
       async function applySubscriptionToUser({ priceId, status, customerId, emailHint, subscription }) {
         if (!stripe || !supabase) return;
         let email = emailHint || null;
@@ -161,7 +149,12 @@ app.get('/stripe/ping', (req, res) => {
         }
 
         const mapping = PRICE_TO_PLAN[priceId] || null;
-        // Check if this is a trial subscription (Stripe trialing status with a trial_end timestamp)
+        if (!mapping) {
+          console.warn('[Stripe] Unknown priceId, leaving plan unchanged:', priceId);
+          return;
+        }
+
+        // Determine if this is a trial subscription
         const isTrialSubscription = subscription && subscription.status === 'trialing' && subscription.trial_end;
 
         // Ensure user exists; if not, pre-create placeholder row so order doesn't matter
@@ -195,12 +188,8 @@ app.get('/stripe/ping', (req, res) => {
           }
 
           if (status === 'active' || status === 'trialing' || status === 'past_due') {
-            if (!mapping) {
-              console.warn('[Stripe] Unknown priceId for active-like status, leaving plan unchanged:', priceId);
-              return;
-            }
             if (isTrialSubscription) {
-              // Free trial: override billing_period to 'trial', set is_trial true, and set trial_end from Stripe
+              // Free trial: set is_trial true and store trial_end from Stripe
               await updateUser(email, {
                 plan: mapping.plan,
                 billing_period: mapping.billing_period, // keep billing period to represent paid cycle
@@ -229,8 +218,6 @@ app.get('/stripe/ping', (req, res) => {
           const session = event.data.object;
           // Try to get email from session first
           const emailHint = session.customer_details?.email || session.customer_email || null;
-          // Check if this subscription has a trial
-          const isTrial = session.subscription ? await isSubscriptionInTrial(session.subscription) : false;
           // Retrieve subscription to get price ID
           if (session.subscription) {
             const sub = await stripe.subscriptions.retrieve(session.subscription);
@@ -255,7 +242,7 @@ app.get('/stripe/ping', (req, res) => {
           const item = sub.items && sub.items.data && sub.items.data[0];
           const priceId = item && item.price && item.price.id;
           // For these events, we only have customer ID; email is fetched inside
-          await applySubscriptionToUser({ customerId: sub.customer, priceId, status: sub.status });
+          await applySubscriptionToUser({ customerId: sub.customer, priceId, status: sub.status, subscription: sub });
           break;
         }
         case 'customer.subscription.deleted': {
@@ -266,7 +253,7 @@ app.get('/stripe/ping', (req, res) => {
           await applySubscriptionToUser({ 
             customerId: sub.customer, 
             priceId, 
-            status: 'canceled' // Explicitly set status to 'canceled'
+            status: 'canceled'
           });
           break;
         }
@@ -291,7 +278,7 @@ app.get('/stripe/ping', (req, res) => {
       console.error('[Stripe] Webhook handler error:', err);
       res.status(500).send('Webhook handler error');
     }
-  });
+  }));
 }
 
 // JSON parser for remaining routes
@@ -469,6 +456,7 @@ app.get('/me', authMiddleware, async (req, res) => {
       u.trial_end = null;
     }
 
+<<<<<<< HEAD
     return res.json({ 
       success: true, 
       email, 
@@ -483,6 +471,10 @@ app.get('/me', authMiddleware, async (req, res) => {
         timeRemaining: trialTimeRemaining
       }
     });
+=======
+    const plan = u.plan ? { type: u.plan, billingCycle: u.billing_period } : null;
+    return res.json({ success: true, email, plan, billing_period: u.billing_period, trial_end: u.trial_end });
+>>>>>>> 31f1a55fa19bf09dfa942b38dd6f7be10c77ecca
   } catch (e) {
     console.error('[GET /me] Error:', e.message);
     return res.status(500).json({ success: false, error: 'server_error' });
