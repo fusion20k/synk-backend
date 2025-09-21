@@ -456,14 +456,16 @@ app.get('/me', authMiddleware, async (req, res) => {
       u.trial_end = null;
     }
 
-<<<<<<< HEAD
+    const plan = u.plan ? { 
+      type: u.plan, 
+      billingCycle: u.billing_period 
+    } : null;
     return res.json({ 
       success: true, 
       email, 
-      plan: u.plan ? { 
-        type: u.plan, 
-        billingCycle: u.billing_period 
-      } : null,
+      plan,
+      billing_period: u.billing_period,
+      trial_end: u.trial_end,
       trial: {
         isActive: isTrialActive,
         isTrial: !!u.is_trial,
@@ -471,10 +473,6 @@ app.get('/me', authMiddleware, async (req, res) => {
         timeRemaining: trialTimeRemaining
       }
     });
-=======
-    const plan = u.plan ? { type: u.plan, billingCycle: u.billing_period } : null;
-    return res.json({ success: true, email, plan, billing_period: u.billing_period, trial_end: u.trial_end });
->>>>>>> 31f1a55fa19bf09dfa942b38dd6f7be10c77ecca
   } catch (e) {
     console.error('[GET /me] Error:', e.message);
     return res.status(500).json({ success: false, error: 'server_error' });
