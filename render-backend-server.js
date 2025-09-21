@@ -470,6 +470,8 @@ app.get('/me', authMiddleware, async (req, res) => {
       email, 
       plan,
       billing_period: u.billing_period,
+      // Top-level flags kept for backward compatibility with existing frontend
+      is_trial: !!u.is_trial,
       trial_end: u.trial_end,
       trial: {
         isActive: isTrialActive,
