@@ -301,7 +301,7 @@ app.head('/_health', (req, res) => res.status(200).end());
 app.use(express.json());
 
 // OAuth2 client setup
-const BACKEND_URL = process.env.BACKEND_URL || 'https://synk-backend.onrender.com';
+const BACKEND_URL = process.env.BACKEND_URL || 'https://synk-web.onrender.com';
 const REDIRECT_URI = `${BACKEND_URL}/oauth2callback`;
 
 console.log('[OAuth2] Configuration:');
