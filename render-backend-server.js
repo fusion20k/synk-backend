@@ -32,6 +32,17 @@ app.get('/stripe/ping', (req, res) => {
   res.json({ ok: true });
 });
 
+// General health endpoint for Render
+app.get('/_health', (req, res) => {
+  res.status(200).json({
+    ok: true,
+    service: 'synk-backend',
+    uptime: process.uptime(),
+    timestamp: new Date().toISOString()
+  });
+});
+app.head('/_health', (req, res) => res.status(200).end());
+
 // Stripe webhook must use raw body and be before express.json()
 {
   // Helpful GET for browser checks (Stripe uses POST). Returns simple OK.
