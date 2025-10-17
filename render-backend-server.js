@@ -383,53 +383,114 @@ app.get('/', (req, res) => {
 // Health check endpoint
 app.get('/_health', (req, res) => res.json({ ok: true, host: BACKEND_URL }));
 
-// Signup
+// Signup - BULLETPROOF: Sets plan/billing_period/is_trial to NULL
 app.post('/signup', async (req, res) => {
   try {
-    const { email, password } = req.body || {};
-    if (!email || !password) return res.status(400).json({ success: false, error: 'missing_params' });
+    const { email, password, plan, billing_period, is_trial } = req.body || {};
+    
+    // Validate required fields
+    if (!email || !password) {
+      console.warn('[POST /signup] Missing email or password');
+      return res.status(400).json({ success: false, error: 'missing_params' });
+    }
 
+    // SERVER-SIDE VALIDATION: Reject any attempt to set plan values from client
+    if (plan !== undefined || billing_period !== undefined || is_trial !== undefined) {
+      console.error('[POST /signup] SECURITY VIOLATION: Client attempted to set plan values', {
+        email,
+        attempted_plan: plan,
+        attempted_billing_period: billing_period,
+        attempted_is_trial: is_trial,
+        ip: req.ip,
+        user_agent: req.headers['user-agent']
+      });
+      return res.status(403).json({ 
+        success: false, 
+        error: 'forbidden_plan_modification',
+        message: 'Plan values can only be set through Stripe checkout'
+      });
+    }
+
+    // Check if user already exists
     const existing = await getUserByEmail(email);
     if (existing) {
+      console.warn('[POST /signup] User already exists:', email);
       return res.status(409).json({ success: false, error: 'user_exists' });
     }
 
+    // Hash password
     const password_hash = await bcrypt.hash(password, 10);
 
-    const trial_end = new Date(Date.now() + 14*24*60*60*1000).toISOString();
-    const row = { email, password_hash, plan: 'pro', billing_period: 'trial', trial_end };
+    // BULLETPROOF: Explicitly set plan values to NULL (no trial, no plan)
+    const row = { 
+      email, 
+      password_hash, 
+      plan: null, 
+      billing_period: null, 
+      is_trial: null,
+      trial_end: null 
+    };
+    
     await insertUser(row);
+
+    // Audit log
+    console.log('[POST /signup] ✅ User registered successfully:', {
+      email,
+      plan: null,
+      billing_period: null,
+      is_trial: null,
+      timestamp: new Date().toISOString()
+    });
 
     const token = jwt.sign({ email }, JWT_SECRET, { expiresIn: '30d' });
     return res.json({ success: true, token, user: { email } });
   } catch (e) {
-    console.error('[POST /signup] Error:', e.message);
+    console.error('[POST /signup] Error:', e.message, e.stack);
     return res.status(500).json({ success: false, error: 'server_error' });
   }
 });
 
-// Login
+// Login - With audit logging
 app.post('/login', async (req, res) => {
   try {
     const { email, password } = req.body || {};
-    if (!email || !password) return res.status(400).json({ success: false, error: 'missing_params' });
+    if (!email || !password) {
+      console.warn('[POST /login] Missing email or password');
+      return res.status(400).json({ success: false, error: 'missing_params' });
+    }
 
     const userRow = await getUserByEmail(email);
-    if (!userRow) return res.status(401).json({ success: false, error: 'invalid_credentials' });
+    if (!userRow) {
+      console.warn('[POST /login] User not found:', email);
+      return res.status(401).json({ success: false, error: 'invalid_credentials' });
+    }
 
     // If user exists from webhook placeholder (no password yet), allow first login to set password
     if (!userRow.password_hash) {
       const password_hash = await bcrypt.hash(password, 10);
       await updateUser(email, { password_hash });
+      console.log('[POST /login] Password set for webhook-created user:', email);
     }
 
     const ok = await bcrypt.compare(password, userRow.password_hash || password); // if freshly set above, this will also pass
-    if (!ok) return res.status(401).json({ success: false, error: 'invalid_credentials' });
+    if (!ok) {
+      console.warn('[POST /login] Invalid password for:', email);
+      return res.status(401).json({ success: false, error: 'invalid_credentials' });
+    }
+
+    // Audit log
+    console.log('[POST /login] ✅ User logged in successfully:', {
+      email,
+      plan: userRow.plan,
+      billing_period: userRow.billing_period,
+      is_trial: userRow.is_trial,
+      timestamp: new Date().toISOString()
+    });
 
     const token = jwt.sign({ email }, JWT_SECRET, { expiresIn: '30d' });
     return res.json({ success: true, token, user: { email } });
   } catch (e) {
-    console.error('[POST /login] Error:', e.message);
+    console.error('[POST /login] Error:', e.message, e.stack);
     return res.status(500).json({ success: false, error: 'server_error' });
   }
 });
