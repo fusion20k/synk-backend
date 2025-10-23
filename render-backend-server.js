@@ -13,6 +13,7 @@ const app = express();
 
 // At top of server file
 const oauthResults = {}; // { state: { tokens, createdAt } }
+// Deployment trigger: Fresh redeploy initiated
 console.log('[Server] BACKEND_URL=', process.env.BACKEND_URL || 'NOT SET');
 
 // Initialize Stripe (optional)
