@@ -613,9 +613,19 @@ app.get('/oauth2callback', async (req, res) => {
   try {
     console.log('[OAuth2Callback] Attempting token exchange with redirect URI:', REDIRECT_URI);
     const { tokens } = await oauth2Client.getToken(code);
-    oauthResults[state] = { tokens, createdAt: Date.now() };
+    
+    // Normalize token structure - convert expiry_date to expires_in
+    const normalizedTokens = {
+      access_token: tokens.access_token,
+      refresh_token: tokens.refresh_token,
+      expires_in: tokens.expires_in || Math.round((tokens.expiry_date - Date.now()) / 1000),
+      scope: tokens.scope,
+      token_type: tokens.token_type
+    };
+    
+    oauthResults[state] = { tokens: normalizedTokens, createdAt: Date.now() };
     console.log('[OAuth2Callback] tokens stored for state:', state);
-    console.log('[OAuth2Callback] token types received:', Object.keys(tokens));
+    console.log('[OAuth2Callback] normalized token fields:', Object.keys(normalizedTokens));
     return res.redirect('https://synk-official.com/oauth-success.html');
   } catch (err) {
     console.error('[OAuth2Callback] token exchange error details:', {
@@ -668,9 +678,21 @@ app.get('/oauth2callback/notion', async (req, res) => {
       throw new Error(`Token exchange failed: ${tokens.error || 'Unknown error'}`);
     }
     
-    oauthResults[state] = { tokens, createdAt: Date.now() };
+    // Ensure all expected fields are present
+    const normalizedTokens = {
+      access_token: tokens.access_token,
+      token_type: tokens.token_type || 'bearer',
+      bot_id: tokens.bot_id,
+      workspace_name: tokens.workspace_name,
+      workspace_icon: tokens.workspace_icon,
+      workspace_id: tokens.workspace_id,
+      owner: tokens.owner,
+      duplicated_template_id: tokens.duplicated_template_id
+    };
+    
+    oauthResults[state] = { tokens: normalizedTokens, createdAt: Date.now() };
     console.log('[NotionOAuth2Callback] tokens stored for state:', state);
-    console.log('[NotionOAuth2Callback] token types received:', Object.keys(tokens));
+    console.log('[NotionOAuth2Callback] normalized token fields:', Object.keys(normalizedTokens));
     return res.redirect('https://synk-official.com/oauth-success.html');
   } catch (err) {
     console.error('[NotionOAuth2Callback] token exchange error details:', {
