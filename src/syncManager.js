@@ -1103,10 +1103,12 @@ async syncPair(googleCalendarId, notionDatabaseId) {
       return;
     }
     
-    console.log(`⚡ Starting SMART periodic sync poll`);
+    console.log(`⚡ Starting CONTINUOUS periodic sync poll`);
+    console.log(`   ✅ FIXED: Always syncing at 7 seconds (regardless of window focus)`);
     console.log(`   Active: ${this.intervalActive}ms (7 sec) | Idle: ${this.intervalIdle}ms (2.5 min) | Background: ${this.intervalBackground}ms (2 min)`);
     
     this.pollTimer = setInterval(() => {
+      const syncStartTime = Date.now();
       const userSettings = require('./userSettings');
       
       // ✅ OPTIMIZATION: Get active sync pairs first to avoid unnecessary work
@@ -1133,13 +1135,21 @@ async syncPair(googleCalendarId, notionDatabaseId) {
       const shouldSync = userSettings.isBackgroundSyncEnabled() || hasActivePairs;
       
       if (shouldSync && hasActivePairs) {
-        const state = this.isWindowFocused ? '🪟' : '📦';
-        const speed = this.lastSyncHadChanges ? '⚡' : '🔄';
-        console.log(`${state}${speed} Sync poll (${activeSyncPairs.length} pair${activeSyncPairs.length !== 1 ? 's' : ''}, interval: ${this.currentInterval}ms)`);
+        const syncStatus = this.syncInProgress ? '🔄(IN_PROGRESS)' : '⚡';
+        console.log(`${syncStatus} Sync poll #${this.store.get('syncStats', {}).totalSyncs || 0} (${activeSyncPairs.length} pair${activeSyncPairs.length !== 1 ? 's' : ''}, interval: ${this.currentInterval}ms)`);
         
-        // enqueue a full sync job that checks for remote changes
+        // Enqueue a full sync job that checks for remote changes
         this.queue.add('full-poll');
-        this.flushQueue();
+        
+        // Track sync performance
+        this.flushQueue().then(() => {
+          const syncDuration = Date.now() - syncStartTime;
+          if (syncDuration > 1000) {
+            console.log(`⏱️ Sync took ${syncDuration}ms - consider checking API response times`);
+          }
+        }).catch(err => {
+          console.error(`❌ Sync poll error:`, err);
+        });
       } else if (!hasActivePairs) {
         console.log('⏰ Sync poll skipped (no active pairs)');
       } else {
