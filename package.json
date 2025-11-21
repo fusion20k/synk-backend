@@ -1,26 +1,59 @@
 {
-  "name": "synk-backend",
+  "name": "synk-pro",
   "version": "1.0.0",
-  "description": "Synk Backend Server for OAuth and API endpoints",
-  "main": "render-backend-server.js",
+  "description": "Notion & Google Calendar Sync",
+  "main": "src/main-simple.js",
+  "author": "Synk Team",
+  "license": "MIT",
   "scripts": {
-    "start": "node render-backend-server.js",
-    "dev": "nodemon render-backend-server.js",
-    "test": "node render-backend-server.js"
+    "start": "electron-forge start",
+    "dev": "electron-forge start",
+    "build": "electron-builder"
   },
-  "engines": {
-    "node": ">=16.0.0"
-  },
-  "dependencies": {
-    "express": "^4.18.2",
-    "cors": "^2.8.5",
-    "googleapis": "^128.0.0",
-    "dotenv": "^16.3.1",
-    "node-fetch": "^2.7.0"
+  "build": {
+    "appId": "com.synk.app",
+    "productName": "Synk",
+    "files": [
+      "src/**/*",
+      "node_modules/**/*",
+      "package.json"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "assets/icon.ico"
+    },
+    "nsis": {
+      "installerIcon": "assets/icon.ico",
+      "uninstallerIcon": "assets/icon.ico",
+      "installerHeaderIcon": "assets/icon.ico",
+      "artifactName": "Synk.Setup.${ext}"
+    }
   },
   "devDependencies": {
-    "nodemon": "^3.0.1"
+    "@electron-forge/cli": "^7.10.2",
+    "electron": "^27.2.0",
+    "electron-builder": "latest"
   },
-  "author": "Synk Team",
-  "license": "MIT"
+  "dependencies": {
+    "@supabase/supabase-js": "^2.45.3",
+    "axios": "^1.11.0",
+    "bcryptjs": "^2.4.3",
+    "cors": "^2.8.5",
+    "dotenv": "^16.0.0",
+    "electron-log": "^4.4.8",
+    "electron-store": "^8.2.0",
+    "express": "^4.21.2",
+    "googleapis": "^159.0.0",
+    "jsonwebtoken": "^9.0.2",
+    "keytar": "^7.9.0",
+    "node-fetch": "^2.7.0",
+    "stripe": "^14.21.0"
+  }
 }
