@@ -159,11 +159,12 @@ class PlanManager {
             let planType = 'pro';
             let planName = 'Pro';
             let features = [
-                '3 Google Calendar connections',
-                '3 Notion database connections', 
+                'Unlimited Google Calendar connections',
+                'Unlimited Notion database connections', 
                 'Automatic live sync',
                 'Manual and incremental sync',
-                'Email support'
+                'AI Integration (Coming Soon)',
+                'Priority support'
             ];
 
             // Determine plan type from product name
@@ -173,8 +174,7 @@ class PlanManager {
                 features = [
                     '1 Google Calendar connection',
                     '1 Notion database connection',
-                    'Manual sync only',
-                    'Community support'
+                    'Manual sync only'
                 ];
             }
 
@@ -248,7 +248,7 @@ class PlanManager {
                 return [].includes(plan.type);
             
             case 'priority_support':
-                return [].includes(plan.type);
+                return ['trial', 'pro'].includes(plan.type);
             
             default:
                 return false;
@@ -263,10 +263,10 @@ class PlanManager {
             case 'trial':
             case 'pro':
                 return {
-                    maxDatabases: 3,
-                    maxCalendars: 3,
+                    maxDatabases: Infinity,
+                    maxCalendars: Infinity,
                     syncFrequency: 7000, // 7 seconds (from config)
-                    supportLevel: 'email'
+                    supportLevel: 'priority'
                 };
             
             case 'free':
@@ -274,7 +274,7 @@ class PlanManager {
                     maxDatabases: 1,
                     maxCalendars: 1,
                     syncFrequency: 0, // manual only
-                    supportLevel: 'community'
+                    supportLevel: 'none'
                 };
             
             default:
