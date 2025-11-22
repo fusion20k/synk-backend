@@ -7,7 +7,8 @@ ALTER TABLE users DROP CONSTRAINT IF EXISTS users_plan_check;
 
 -- Step 2: Add new CHECK constraint with correct plan values
 ALTER TABLE users 
-ADD CONSTRAINT users_plan_check CHECK (plan IN ('free', 'pro', 'trial', NULL));
+ADD CONSTRAINT users_plan_check CHECK (plan IN ('free', 'pro', NULL));
 
--- Done! The plan column now accepts 'free', 'pro', 'trial', or NULL
+-- Done! The plan column now accepts 'free', 'pro', or NULL
 -- You can now set user plans to 'free' without errors
+-- Note: Trial plans have been removed entirely from the system

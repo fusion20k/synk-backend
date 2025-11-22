@@ -286,8 +286,7 @@ app.post('/signup', async (req, res) => {
 
     const password_hash = await bcrypt.hash(password, 10);
 
-    const trial_end = new Date(Date.now() + 14*24*60*60*1000).toISOString();
-    const row = { email, password_hash, plan: 'free', billing_period: 'trial', trial_end };
+    const row = { email, password_hash, plan: 'free', billing_period: null, trial_end: null };
     await insertUser(row);
 
     const token = jwt.sign({ email }, JWT_SECRET, { expiresIn: '30d' });
@@ -342,14 +341,8 @@ app.get('/me', authMiddleware, async (req, res) => {
     const u = await getUserByEmail(email);
     if (!u) return res.status(404).json({ success: false, error: 'user_not_found' });
 
-    // Expire trial if needed
-    if (u.trial_end && new Date() > new Date(u.trial_end) && u.billing_period === 'trial') {
-      await updateUser(email, { plan: null, billing_period: null, trial_end: null });
-      u.plan = null; u.billing_period = null; u.trial_end = null;
-    }
-
     const plan = u.plan ? { type: u.plan, billingCycle: u.billing_period } : null;
-    return res.json({ success: true, email, plan, billing_period: u.billing_period, trial_end: u.trial_end });
+    return res.json({ success: true, email, plan, billing_period: u.billing_period });
   } catch (e) {
     console.error('[GET /me] Error:', e.message);
     return res.status(500).json({ success: false, error: 'server_error' });

@@ -25,7 +25,7 @@ ALTER TABLE users DROP CONSTRAINT IF EXISTS users_plan_check;
 
 -- Add new CHECK constraint with correct plan values
 ALTER TABLE users 
-ADD CONSTRAINT users_plan_check CHECK (plan IN ('free', 'pro', 'trial', NULL));
+ADD CONSTRAINT users_plan_check CHECK (plan IN ('free', 'pro', NULL));
 ```
 
 ## What This Does
@@ -33,8 +33,7 @@ ADD CONSTRAINT users_plan_check CHECK (plan IN ('free', 'pro', 'trial', NULL));
 - **Adds** a new constraint that allows:
   - `'free'` - New Free plan
   - `'pro'` - New Pro plan (replaces old Ultimate)
-  - `'trial'` - Trial plans
-  - `NULL` - No plan yet
+  - `NULL` - No plan yet (trial plans have been removed)
 
 ## After Running This
 You'll be able to:

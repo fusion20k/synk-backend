@@ -49,35 +49,6 @@ class PlanManager {
             if (fs.existsSync(this.planFilePath)) {
                 const planData = JSON.parse(fs.readFileSync(this.planFilePath, 'utf8'));
                 
-                // Only check trial expiration for actual trial plans
-                if (planData.type === 'trial' && planData.trialEndsAt) {
-                    const trialEnd = new Date(planData.trialEndsAt);
-                    const now = new Date();
-                    
-                    if (now > trialEnd) {
-                        // Trial expired
-                        return {
-                            type: 'expired',
-                            name: 'Trial Expired',
-                            description: 'Your free trial has ended. Please upgrade to continue using Synk.',
-                            features: [],
-                            status: 'expired',
-                            trialDaysRemaining: 0
-                        };
-                    } else {
-                        // Calculate remaining days
-                        const daysRemaining = Math.ceil((trialEnd - now) / (1000 * 60 * 60 * 24));
-                        planData.trialDaysRemaining = daysRemaining;
-                    }
-                }
-                
-                // For paid plans (free/pro), ensure no trial data is shown
-                if (planData.type === 'free' || planData.type === 'pro') {
-                    delete planData.trialDaysRemaining;
-                    delete planData.trialStartedAt;
-                    delete planData.trialEndsAt;
-                }
-                
                 console.log('✅ Plan data loaded:', planData.type);
                 return planData;
             }
@@ -85,63 +56,15 @@ class PlanManager {
             console.error('⚠️ Error reading plan file:', error);
         }
 
-        // Default: no current plan until user starts trial or purchases
+        // Default: no current plan until user purchases
         return {
             type: 'none',
             name: 'No Plan',
-            description: 'You haven’t started a plan yet. Start your free trial or purchase a plan.',
+            description: 'You haven't started a plan yet. Choose the Free or Pro plan.',
             features: [],
             status: 'none',
             userId: this.getUserId()
         };
-    }
-
-    // Create a new trial plan
-    createTrialPlan() {
-        const trialStart = new Date();
-        const trialEnd = new Date(trialStart.getTime() + (14 * 24 * 60 * 60 * 1000)); // 14 days
-
-        const trialPlan = {
-            type: 'trial',
-            name: 'Free Trial',
-            description: 'You are currently on a free trial. Connect both services to start your 14-day trial.',
-            features: [
-                '14-day free trial',
-                'All Pro features included',
-                'Unlimited Notion databases',
-                'Unlimited Google calendars',
-                'Real-time bidirectional sync',
-                'Email support'
-            ],
-            status: 'active',
-            trialStartedAt: trialStart.toISOString(),
-            trialEndsAt: trialEnd.toISOString(),
-            trialDaysRemaining: 14,
-            userId: this.getUserId()
-        };
-
-        this.savePlan(trialPlan);
-        return trialPlan;
-    }
-
-    // Start trial when user connects both services
-    startTrial() {
-        const currentPlan = this.getCurrentPlan();
-        
-        if (currentPlan.type === 'trial' && !currentPlan.trialStartedAt) {
-            const trialStart = new Date();
-            const trialEnd = new Date(trialStart.getTime() + (14 * 24 * 60 * 60 * 1000));
-            
-            currentPlan.trialStartedAt = trialStart.toISOString();
-            currentPlan.trialEndsAt = trialEnd.toISOString();
-            currentPlan.description = 'Your 14-day free trial is now active. Enjoy all Pro features!';
-            
-            this.savePlan(currentPlan);
-            console.log('✅ Trial started');
-            return currentPlan;
-        }
-        
-        return currentPlan;
     }
 
     // Update plan from Stripe webhook
@@ -217,23 +140,19 @@ class PlanManager {
     // Check if user has access to a feature
     hasFeatureAccess(feature) {
         const plan = this.getCurrentPlan();
-        
-        if (plan.status === 'expired') {
-            return false;
-        }
 
         switch (feature) {
             case 'basic_sync':
-                return ['trial', 'free', 'pro'].includes(plan.type);
+                return ['free', 'pro'].includes(plan.type);
             
             case 'unlimited_databases':
-                return ['trial', 'pro'].includes(plan.type);
+                return ['pro'].includes(plan.type);
             
             case 'automatic_sync':
-                return ['trial', 'pro'].includes(plan.type);
+                return ['pro'].includes(plan.type);
             
             case 'incremental_sync':
-                return ['trial', 'pro'].includes(plan.type);
+                return ['pro'].includes(plan.type);
             
             case 'advanced_filtering':
                 return [].includes(plan.type);
@@ -248,7 +167,7 @@ class PlanManager {
                 return [].includes(plan.type);
             
             case 'priority_support':
-                return ['trial', 'pro'].includes(plan.type);
+                return ['pro'].includes(plan.type);
             
             default:
                 return false;
@@ -260,7 +179,6 @@ class PlanManager {
         const plan = this.getCurrentPlan();
         
         switch (plan.type) {
-            case 'trial':
             case 'pro':
                 return {
                     maxDatabases: Infinity,
@@ -313,7 +231,6 @@ module.exports = {
         planManager.savePlan(planData);
         return planData;
     },
-    startTrial: () => planManager.startTrial(),
     checkFeatureAccess: (feature) => planManager.hasFeatureAccess(feature),
     getPlanLimits: () => planManager.getPlanLimits(),
     clearPlanData: () => planManager.clearPlanData(),
