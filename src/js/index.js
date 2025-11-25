@@ -2376,8 +2376,8 @@
         // Call settings initialization
         initializeSettingsHandlers().catch(err => console.error('Failed to initialize settings:', err));
 
-        // Error toast functions
-        function showErrorToast(message) {
+        // Error toast functions - expose to window for HTML onclick handlers
+        window.showErrorToast = function(message) {
             const toast = document.getElementById('error-toast');
             const messageSpan = document.getElementById('error-message');
             if (toast && messageSpan) {
@@ -2385,21 +2385,20 @@
                 toast.style.display = 'flex';
                 toast.style.animation = 'slideInRight 0.3s ease-out';
                 // Auto-hide after 6 seconds
-                setTimeout(() => hideErrorToast(), 6000);
+                setTimeout(() => window.hideErrorToast(), 6000);
             }
-        }
+        };
 
-        function hideErrorToast() {
+        window.hideErrorToast = function() {
             const toast = document.getElementById('error-toast');
             if (toast) {
                 toast.style.display = 'none';
             }
-        }
+        };
 
-        function showSuccessToast(message) {
+        window.showSuccessToast = function(message) {
             console.log('[Success]', message);
-            // For now, just log to console. You can add a success toast UI later if needed.
-        }
+        };
 
         async function fetchNotionDatabases() {
             try {
