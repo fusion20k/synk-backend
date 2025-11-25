@@ -12,6 +12,9 @@ console.log('[MAIN] 🚀 Starting Synk app...');
 console.log('[MAIN] process.type:', process.type);
 
 app.disableHardwareAcceleration();
+app.commandLine.appendSwitch('disable-gpu-sandbox');
+app.commandLine.appendSwitch('no-sandbox');
+app.commandLine.appendSwitch('disable-dev-shm-usage');
 
 async function handleFirstRun() {
   try {
@@ -430,7 +433,12 @@ if (!gotTheLock) {
 app.whenReady().then(async () => {
   await handleFirstRun();
   console.log('[MAIN] ✅ App ready, creating window');
-  createWindow();
+  try {
+    createWindow();
+  } catch (err) {
+    console.error('[MAIN] ❌ Error creating window:', err);
+    process.exit(1);
+  }
 }).catch(err => {
   console.error('[MAIN] ❌ App ready error:', err);
 });
