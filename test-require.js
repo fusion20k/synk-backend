@@ -1,1 +1,0 @@
-﻿const electron = require('electron'); console.log('Type:', typeof electron); console.log('Electron:', JSON.stringify(Object.keys(electron || {})));  console.log('App exists:', !!electron.app); if (electron.app) { electron.app.quit(); }
