@@ -116,21 +116,21 @@ app.get('/stripe/ping', (req, res) => {
         }
         if (!userRow) {
           try {
-            await insertUser({ email, password_hash: null, plan: null, billing_period: null, trial_end: null });
+            await insertUser({ email, password_hash: null, plan: "free" });
             console.log('[Stripe] Placeholder user created for', email);
           } catch (e) {
             console.error('[Stripe] insertUser error:', e.message);
           }
         }
 
-        // If subscription is active, set plan; if canceled/unpaid, clear plan
+        // If subscription is active, set plan; if canceled/unpaid, revert to free
         try {
           if (status === 'active' || status === 'trialing' || status === 'past_due') {
-            await updateUser(email, { plan: mapping.plan, billing_period: mapping.billing_period, trial_end: null });
+            await updateUser(email, { plan: mapping.plan, billing_period: mapping.billing_period });
             console.log('[Stripe] Plan set for', email, mapping.plan, mapping.billing_period);
           } else {
-            await updateUser(email, { plan: null, billing_period: null, trial_end: null });
-            console.log('[Stripe] Plan cleared for', email, status);
+            await updateUser(email, { plan: 'free', billing_period: null });
+            console.log('[Stripe] Plan reverted to free for', email, status);
           }
         } catch (e) {
           console.error('[Stripe] updateUser error:', e.message);
@@ -286,7 +286,7 @@ app.post('/signup', async (req, res) => {
 
     const password_hash = await bcrypt.hash(password, 10);
 
-    const row = { email, password_hash, plan: 'free', billing_period: null, trial_end: null };
+    const row = { email, password_hash, plan: 'free' };
     await insertUser(row);
 
     const token = jwt.sign({ email }, JWT_SECRET, { expiresIn: '30d' });
