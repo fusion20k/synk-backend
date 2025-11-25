@@ -1,0 +1,288 @@
+                    success: result.success,
+                    hasError: !!result.error,
+                    hasDatabases: !!result.databases,
+                    databaseCount: result.databases?.length
+                });
+                
+                if (result.error) {
+                    console.error('[Renderer] Notion OAuth error:', result.error);
+                    showNotionOAuthStatus('error', result.error);
+                    showErrorToast(`Notion connection failed: ${result.error}`);
+                    isNotionConnecting = false;
+                } else if (result.success && result.databases) {
+                    console.log('[Renderer] Notion OAuth succeeded with databases');
+                    showNotionOAuthStatus('success');
+                    
+                    setTimeout(async () => {
+                        isNotionConnected = true;
+                        isNotionConnecting = false;
+                        hideNotionOAuthStatus();
+                        updateNotionButton('connected');
+                        
+                        updateConnectionPill('notion', true);
+                        
+                        // Fetch and display databases
+                        try {
+                            const listFn = window.electronAPI.listNotionDatabases || window.electronAPI.listDatabases;
+                            const resp = await listFn();
+                            const databases = resp?.databases ?? resp ?? [];
+                            displayDatabases(databases);
+                        } catch (e) {
+                            console.error('[Renderer] Error fetching databases:', e);
+                        }
+                    }, 1500);
+                } else if (result.success) {
+                    console.log('[Renderer] Notion OAuth succeeded');
+                    showNotionOAuthStatus('success');
+                    
+                    setTimeout(() => {
+                        isNotionConnected = true;
+                        isNotionConnecting = false;
+                        hideNotionOAuthStatus();
+                        updateConnectionPill('notion', true);
+                    }, 1500);
+                } else {
+                    console.log('[Renderer] Notion OAuth in progress...');
+                }
+            } catch (error) {
+                console.error('[Renderer] Notion OAuth exception:', error);
+                showNotionOAuthStatus('error', error.message);
+                showErrorToast(`Notion connection failed: ${error.message}`);
+                isNotionConnecting = false;
+            }
+        }
+
+        // OAuth status UI helpers
+        function showGoogleOAuthStatus(state, message = '') {
+            const statusDiv = document.getElementById('google-oauth-status');
+            if (!statusDiv) return;
+            
+            statusDiv.style.display = 'flex';
+            statusDiv.className = 'oauth-status ' + state;
+            
+            const icon = statusDiv.querySelector('.status-icon');
+            const text = statusDiv.querySelector('.status-text');
+            
+            if (state === 'loading') {
+                if (icon) icon.textContent = '⏳';
+                if (text) text.textContent = 'Connecting to Google...';
+            } else if (state === 'success') {
+                if (icon) icon.textContent = '✓';
+                if (text) text.textContent = 'Connected successfully!';
+            } else if (state === 'error') {
+                if (icon) icon.textContent = '✗';
+                if (text) text.textContent = message || 'Connection failed';
+            }
+        }
+
+        function hideGoogleOAuthStatus() {
+            const statusDiv = document.getElementById('google-oauth-status');
+            if (statusDiv) {
+                statusDiv.style.display = 'none';
+            }
+        }
+
+        function updateGoogleButton(state) {
+            const btn = document.getElementById('google-connect');
+            const text = document.getElementById('google-text');
+            
+            if (state === 'loading') {
+                if (btn) {
+                    btn.disabled = true;
+                    btn.classList.add('loading');
+                }
+                if (text) text.textContent = 'Connecting...';
+            } else if (state === 'connected') {
+                if (btn) {
+                    btn.disabled = true;
+                    btn.classList.add('connected');
+                    btn.classList.remove('loading');
+                }
+                if (text) text.textContent = 'Connected';
+            } else if (state === 'error') {
+                if (btn) {
+                    btn.disabled = false;
+                    btn.classList.remove('loading', 'connected');
+                }
+                if (text) text.textContent = 'Connect Google';
+            } else {
+                // default state
+                if (btn) {
+                    btn.disabled = false;
+                    btn.classList.remove('loading', 'connected');
+                }
+                if (text) text.textContent = 'Connect Google';
+            }
+        }
+
+        function showNotionOAuthStatus(state, message = '') {
+            const statusDiv = document.getElementById('notion-oauth-status');
+            if (!statusDiv) return;
+            
+            statusDiv.style.display = 'flex';
+            statusDiv.className = 'oauth-status ' + state;
+            
+            const icon = statusDiv.querySelector('.status-icon');
+            const text = statusDiv.querySelector('.status-text');
+            
+            if (state === 'loading') {
+                if (icon) icon.textContent = '⏳';
+                if (text) text.textContent = 'Connecting to Notion...';
+            } else if (state === 'success') {
+                if (icon) icon.textContent = '✓';
+                if (text) text.textContent = 'Connected successfully!';
+            } else if (state === 'error') {
+                if (icon) icon.textContent = '✗';
+                if (text) text.textContent = message || 'Connection failed';
+            }
+        }
+
+        function hideNotionOAuthStatus() {
+            const statusDiv = document.getElementById('notion-oauth-status');
+            if (statusDiv) {
+                statusDiv.style.display = 'none';
+            }
+        }
+
+        function updateNotionButton(state) {
+            const btn = document.getElementById('notion-connect');
+            const text = document.getElementById('notion-text');
+            
+            if (state === 'loading') {
+                if (btn) {
+                    btn.disabled = true;
+                    btn.classList.add('loading');
+                }
+                if (text) text.textContent = 'Connecting...';
+            } else if (state === 'connected') {
+                if (btn) {
+                    btn.disabled = true;
+                    btn.classList.add('connected');
+                    btn.classList.remove('loading');
+                }
+                if (text) text.textContent = 'Connected';
+            } else if (state === 'error') {
+                if (btn) {
+                    btn.disabled = false;
+                    btn.classList.remove('loading', 'connected');
+                }
+                if (text) text.textContent = 'Connect Notion';
+            } else {
+                // default state
+                if (btn) {
+                    btn.disabled = false;
+                    btn.classList.remove('loading', 'connected');
+                }
+                if (text) text.textContent = 'Connect Notion';
+            }
+        }
+
+        // Retry button handlers (inside DOMContentLoaded)
+        document.addEventListener('DOMContentLoaded', () => {
+            const googleRetry = document.getElementById('google-retry-btn');
+            if (googleRetry) {
+                googleRetry.addEventListener('click', () => {
+                    hideGoogleOAuthStatus();
+                    handleGoogleConnect();
+                });
+            }
+            
+            const notionRetry = document.getElementById('notion-retry-btn');
+            if (notionRetry) {
+                notionRetry.addEventListener('click', () => {
+                    hideNotionOAuthStatus();
+                    handleNotionConnect();
+                });
+            }
+
+            // Background sync toggle handler
+            const bgSyncToggle = document.getElementById('bg-sync-toggle');
+            if (bgSyncToggle) {
+                bgSyncToggle.addEventListener('change', async (e) => {
+                    const enabled = e.target.checked;
+                    console.log('[Renderer] Background sync toggled:', enabled);
+                    
+                    try {
+                        if (window.electronAPI && window.electronAPI.setBackgroundSync) {
+                            await window.electronAPI.setBackgroundSync(enabled);
+                            showSuccessToast(`Background sync ${enabled ? 'enabled' : 'disabled'}`);
+                        }
+                    } catch (error) {
+                        console.error('[Renderer] Failed to toggle background sync:', error);
+                        showErrorToast('Failed to update background sync setting');
+                        e.target.checked = !enabled; // Revert toggle
+                    }
+                });
+            }
+
+            // Sync All toggle handler with smooth CSS animations
+            const syncAllToggle = document.getElementById('sync-all-toggle');
+            if (syncAllToggle) {
+                syncAllToggle.addEventListener('change', async (e) => {
+                    const enabled = e.target.checked;
+                    console.log('[Renderer] Sync All toggled:', enabled);
+                    
+                    try {
+                        // Save to backend
+                        if (window.electronAPI && window.electronAPI.setSyncAllCalendars) {
+                            await window.electronAPI.setSyncAllCalendars(enabled);
+                        }
+                        
+                        // Save preference to localStorage for UI state
+                        localStorage.setItem('syncAllEnabled', enabled);
+                        
+                        // Apply/remove collapsed class to service sections for smooth animation
+                        toggleSyncAllUI(enabled);
+                        
+                        showSuccessToast(`Sync All ${enabled ? 'enabled' : 'disabled'}`);
+                    } catch (error) {
+                        console.error('[Renderer] Failed to toggle Sync All:', error);
+                        showErrorToast('Failed to update Sync All setting');
+                        e.target.checked = !enabled; // Revert toggle
+                    }
+                });
+                
+                // Restore Sync All state from localStorage on page load
+                const savedSyncAll = localStorage.getItem('syncAllEnabled') === 'true';
+                if (savedSyncAll) {
+                    syncAllToggle.checked = true;
+                    
+                    // Apply collapsed state immediately on load
+                    toggleSyncAllUI(true);
+                }
+            }
+        });
+
+        // Titlebar button handlers
+        if (window.electronAPI) {
+            const minimizeBtn = document.getElementById('minimize-btn');
+            const maximizeBtn = document.getElementById('maximize-btn');
+            const closeBtn = document.getElementById('close-btn');
+
+            if (minimizeBtn) {
+                minimizeBtn.addEventListener('click', () => {
+                    if (window.electronAPI.minimizeWindow) {
+                        window.electronAPI.minimizeWindow();
+                    }
+                });
+            }
+
+            if (maximizeBtn) {
+                maximizeBtn.addEventListener('click', () => {
+                    if (window.electronAPI.maximizeWindow) {
+                        window.electronAPI.maximizeWindow();
+                    }
+                });
+            }
+
+            if (closeBtn) {
+                closeBtn.addEventListener('click', () => {
+                    if (window.electronAPI.closeWindow) {
+                        window.electronAPI.closeWindow();
+                    }
+                });
+            }
+        }
+    </script>
+</body>
+</html>
