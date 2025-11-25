@@ -17,6 +17,8 @@ app.commandLine.appendSwitch('no-sandbox');
 app.commandLine.appendSwitch('disable-dev-shm-usage');
 app.commandLine.appendSwitch('disable-gpu-compositing');
 app.commandLine.appendSwitch('disable-gl-drawing-for-tests');
+app.commandLine.appendSwitch('disk-cache-dir', path.join(app.getPath('userData'), 'cache'));
+app.commandLine.appendSwitch('media-cache-dir', path.join(app.getPath('userData'), 'media'));
 
 async function handleFirstRun() {
   try {
