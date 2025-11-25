@@ -74,14 +74,26 @@ function createWindow() {
   const fileUrl = `file://${indexPath.replace(/\\/g, '/')}`;
   console.log('[MAIN] Loading:', fileUrl);
   
+  let loadAttempted = false;
+  
+  mainWindow.webContents.on('dom-ready', () => {
+    console.log('[MAIN] DOM ready');
+  });
+  
+  mainWindow.webContents.on('did-fail-load', (event, errorCode, errorDescription, validatedURL) => {
+    console.error('[MAIN] did-fail-load:', errorCode, errorDescription);
+    loadAttempted = true;
+  });
+  
+  mainWindow.webContents.on('crashed', () => {
+    console.error('[MAIN] Renderer process crashed');
+  });
+  
   mainWindow.loadURL(fileUrl).catch(err => {
     console.error('[MAIN] Failed to load index.html:', err);
-    if (mainWindow && !mainWindow.isDestroyed()) {
-      setImmediate(() => {
-        if (mainWindow && !mainWindow.isDestroyed()) {
-          mainWindow.loadURL(`data:text/html,<h1>Synk App</h1><p>Error: App failed to load</p>`);
-        }
-      });
+    if (!loadAttempted && mainWindow && !mainWindow.isDestroyed()) {
+      console.log('[MAIN] Attempting fallback...');
+      mainWindow.loadURL(`data:text/html,<h1>Synk App</h1><p>Error loading app</p>`);
     }
   });
 
