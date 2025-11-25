@@ -93,7 +93,15 @@ function createWindow() {
     console.error('[MAIN] Failed to load index.html:', err);
     if (!loadAttempted && mainWindow && !mainWindow.isDestroyed()) {
       console.log('[MAIN] Attempting fallback...');
-      mainWindow.loadURL(`data:text/html,<h1>Synk App</h1><p>Error loading app</p>`);
+      try {
+        mainWindow.loadURL(`data:text/html,<h1>Synk App</h1><p>Error loading app</p>`).catch(fallbackErr => {
+          console.error('[MAIN] Fallback also failed:', fallbackErr);
+        });
+      } catch (e) {
+        console.error('[MAIN] Exception loading fallback:', e);
+      }
+    } else {
+      console.log('[MAIN] Cannot load fallback - mainWindow destroyed or already attempted');
     }
   });
 
