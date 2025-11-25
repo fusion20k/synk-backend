@@ -71,9 +71,10 @@ function createWindow() {
   });
 
   const indexPath = path.join(__dirname, 'index.html');
-  console.log('[MAIN] Loading:', indexPath);
+  const fileUrl = `file://${indexPath.replace(/\\/g, '/')}`;
+  console.log('[MAIN] Loading:', fileUrl);
   
-  mainWindow.loadFile(indexPath).catch(err => {
+  mainWindow.loadURL(fileUrl).catch(err => {
     console.error('[MAIN] Failed to load index.html:', err);
     if (mainWindow && !mainWindow.isDestroyed()) {
       setImmediate(() => {
