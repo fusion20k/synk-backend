@@ -76,7 +76,11 @@ function createWindow() {
   mainWindow.loadFile(indexPath).catch(err => {
     console.error('[MAIN] Failed to load index.html:', err);
     if (mainWindow && !mainWindow.isDestroyed()) {
-      mainWindow.loadURL(`data:text/html,<h1>Synk App</h1><p>Error loading app</p>`);
+      setImmediate(() => {
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.loadURL(`data:text/html,<h1>Synk App</h1><p>Error: App failed to load</p>`);
+        }
+      });
     }
   });
 
