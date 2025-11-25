@@ -12,13 +12,6 @@ console.log('[MAIN] 🚀 Starting Synk app...');
 console.log('[MAIN] process.type:', process.type);
 
 app.disableHardwareAcceleration();
-app.commandLine.appendSwitch('disable-gpu-sandbox');
-app.commandLine.appendSwitch('no-sandbox');
-app.commandLine.appendSwitch('disable-dev-shm-usage');
-app.commandLine.appendSwitch('disable-gpu-compositing');
-app.commandLine.appendSwitch('disable-gl-drawing-for-tests');
-app.commandLine.appendSwitch('disk-cache-dir', path.join(app.getPath('userData'), 'cache'));
-app.commandLine.appendSwitch('media-cache-dir', path.join(app.getPath('userData'), 'media'));
 
 async function handleFirstRun() {
   try {
@@ -66,43 +59,16 @@ function createWindow() {
       contextIsolation: true,
       preload: path.join(__dirname, 'preload.js'),
       enableRemoteModule: false,
-      sandbox: false
+      sandbox: true
     }
   });
 
   const indexPath = path.join(__dirname, 'index.html');
-  const fileUrl = `file://${indexPath.replace(/\\/g, '/')}`;
-  console.log('[MAIN] Loading:', fileUrl);
+  console.log('[MAIN] Loading:', indexPath);
   
-  let loadAttempted = false;
-  
-  mainWindow.webContents.on('dom-ready', () => {
-    console.log('[MAIN] DOM ready');
-  });
-  
-  mainWindow.webContents.on('did-fail-load', (event, errorCode, errorDescription, validatedURL) => {
-    console.error('[MAIN] did-fail-load:', errorCode, errorDescription);
-    loadAttempted = true;
-  });
-  
-  mainWindow.webContents.on('crashed', () => {
-    console.error('[MAIN] Renderer process crashed');
-  });
-  
-  mainWindow.loadURL(fileUrl).catch(err => {
+  mainWindow.loadFile(indexPath).catch(err => {
     console.error('[MAIN] Failed to load index.html:', err);
-    if (!loadAttempted && mainWindow && !mainWindow.isDestroyed()) {
-      console.log('[MAIN] Attempting fallback...');
-      try {
-        mainWindow.loadURL(`data:text/html,<h1>Synk App</h1><p>Error loading app</p>`).catch(fallbackErr => {
-          console.error('[MAIN] Fallback also failed:', fallbackErr);
-        });
-      } catch (e) {
-        console.error('[MAIN] Exception loading fallback:', e);
-      }
-    } else {
-      console.log('[MAIN] Cannot load fallback - mainWindow destroyed or already attempted');
-    }
+    mainWindow.loadURL(`data:text/html,<h1>Synk App</h1><p>Error loading app</p>`);
   });
 
   mainWindow.once('ready-to-show', () => {
@@ -462,22 +428,9 @@ if (!gotTheLock) {
 }
 
 app.whenReady().then(async () => {
-  try {
-    const cacheDir = path.join(app.getPath('userData'), 'cache');
-    app.getPath('sessionData');
-    await app.setPath('cache', cacheDir);
-  } catch (e) {
-    console.log('[MAIN] Cache path note:', e.message);
-  }
-  
   await handleFirstRun();
   console.log('[MAIN] ✅ App ready, creating window');
-  try {
-    createWindow();
-  } catch (err) {
-    console.error('[MAIN] ❌ Error creating window:', err);
-    process.exit(1);
-  }
+  createWindow();
 }).catch(err => {
   console.error('[MAIN] ❌ App ready error:', err);
 });
