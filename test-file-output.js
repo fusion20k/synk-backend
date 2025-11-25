@@ -1,0 +1,1 @@
+﻿const fs = require('fs'); const electron = require('electron'); fs.writeFileSync('electron-test-output.txt', 'Type: ' + typeof electron + '\nKeys: ' + Object.keys(electron || {}).join(', ') + '\nApp: ' + !!electron.app); if (electron.app) electron.app.quit();

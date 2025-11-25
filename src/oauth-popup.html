@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OAuth - Synk</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #000;
+            color: #fff;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* Custom Titlebar */
+        .titlebar {
+            height: 32px;
+            background: #1f1f24;
+            border-bottom: 1px solid #333;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 0 15px;
+            -webkit-app-region: drag;
+        }
+
+        .titlebar-title {
+            font-size: 13px;
+            color: #ccc;
+            font-weight: 500;
+        }
+
+        .titlebar-controls {
+            display: flex;
+            gap: 8px;
+            -webkit-app-region: no-drag;
+        }
+
+        .titlebar-button {
+            width: 32px;
+            height: 32px;
+            border: none;
+            background: transparent;
+            cursor: pointer;
+            transition: background-color 0.2s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #fff;
+            font-size: 12px;
+            font-family: 'Segoe UI', sans-serif;
+        }
+
+        .titlebar-button:hover {
+            background-color: rgba(255, 255, 255, 0.1);
+        }
+
+        .titlebar-button.close:hover {
+            background-color: #e81123;
+        }
+
+        .titlebar-button.minimize::before {
+            content: "−";
+            font-weight: bold;
+        }
+
+        .titlebar-button.maximize::before {
+            content: "□";
+            font-weight: bold;
+        }
+
+        .titlebar-button.close::before {
+            content: "×";
+            font-weight: bold;
+            font-size: 14px;
+        }
+
+        /* Content Area */
+        .content {
+            flex: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+
+        .oauth-container {
+            text-align: center;
+            max-width: 400px;
+        }
+
+        .spinner {
+            width: 40px;
+            height: 40px;
+            border: 3px solid #333;
+            border-top: 3px solid #667eea;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 20px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        h2 {
+            margin-bottom: 10px;
+            color: #fff;
+        }
+
+        p {
+            color: #ccc;
+            line-height: 1.5;
+        }
+
+        .oauth-frame {
+            width: 100%;
+            height: calc(100vh - 32px);
+            border: none;
+            background: #fff;
+        }
+    </style>
+</head>
+<body>
+    <div class="titlebar">
+        <div class="titlebar-title">OAuth Authentication - Synk</div>
+        <div class="titlebar-controls">
+            <button class="titlebar-button minimize" id="minimize-btn"></button>
+            <button class="titlebar-button maximize" id="maximize-btn"></button>
+            <button class="titlebar-button close" id="close-btn"></button>
+        </div>
+    </div>
+
+    <div class="content" id="content">
+        <div class="oauth-container">
+            <div class="spinner"></div>
+            <h2>Authenticating...</h2>
+            <p>Please complete the authentication process in the browser window that opened.</p>
+        </div>
+    </div>
+
+    <script>
+        // Titlebar Controls
+        document.getElementById('minimize-btn').addEventListener('click', () => {
+            if (window.electronAPI) {
+                window.electronAPI.minimize();
+            }
+        });
+
+        document.getElementById('maximize-btn').addEventListener('click', () => {
+            if (window.electronAPI) {
+                window.electronAPI.maximize();
+            }
+        });
+
+        document.getElementById('close-btn').addEventListener('click', () => {
+            if (window.electronAPI) {
+                window.electronAPI.close();
+            } else {
+                window.close();
+            }
+        });
+
+        // Load OAuth URL in iframe when provided
+        function loadOAuthUrl(url) {
+            const content = document.getElementById('content');
+            content.innerHTML = `<iframe class="oauth-frame" src="${url}"></iframe>`;
+        }
+
+        // Listen for OAuth URL from main process
+        if (window.electronAPI && window.electronAPI.onOAuthUrl) {
+            window.electronAPI.onOAuthUrl((url) => {
+                loadOAuthUrl(url);
+            });
+        }
+
+        // If URL is provided via query parameter
+        const urlParams = new URLSearchParams(window.location.search);
+        const oauthUrl = urlParams.get('url');
+        if (oauthUrl) {
+            loadOAuthUrl(decodeURIComponent(oauthUrl));
+        }
+    </script>
+</body>
+</html>

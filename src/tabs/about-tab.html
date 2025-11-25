@@ -1,0 +1,45 @@
+<!-- About Tab Content -->
+<div class="content-card about-card">
+    <h2>About Synk</h2>
+    <p style="color: #ccc; margin-bottom: 20px;">Synk syncs Notion and Google Calendar events seamlessly in real-time.</p>
+    
+    <div style="margin-bottom: 30px;">
+        <div style="display: flex; align-items: center; justify-content: space-between; gap: 12px;">
+            <h3 style="color: #ff4500; margin-bottom: 15px;">Your Plan</h3>
+            <div>
+                <button id="refresh-plan-btn" class="action-btn" title="Fetch latest plan from backend">Refresh Plan</button>
+            </div>
+        </div>
+        <div id="current-plan-display" style="background: linear-gradient(135deg, #111 0%, #0f0f0f 100%); border: 1px solid #333; border-radius: 12px; padding: 20px; margin-bottom: 20px;">
+            <div id="plan-status">
+                <p style="color: #fff; font-weight: 600; margin-bottom: 6px; display:flex; align-items:center; gap:10px;">
+                    <span id="plan-title">Detecting...</span>
+                    <span id="trial-badge" style="display:none; background: linear-gradient(135deg, #ff4500, #dc143c); color:#fff; padding:2px 8px; border-radius:4px; font-size:0.8rem; font-weight:bold; box-shadow: 0 0 8px rgba(255,69,0,0.6);">Free Trial</span>
+                </p>
+                <p style="color: #9e9e9e; margin-bottom: 8px;" id="plan-cycle">&nbsp;</p>
+                <p style="color: #66b2ff; font-weight: 600; margin-bottom: 4px; display: none;" id="plan-trial-title">Free Trial (Pro)</p>
+                <p style="color: #66b2ff; margin-bottom: 10px; display: none;" id="plan-trial"></p>
+                <p style="color: #888; margin-bottom: 15px;" id="plan-description">Checking your subscription status...</p>
+            </div>
+        </div>
+    </div>
+    
+    <div style="border-top: 1px solid #333; padding-top: 20px; margin-top: 20px;">
+        <h3 style="color: #ff4500; margin-bottom: 12px;">Account</h3>
+
+        <!-- Logged-in status + logout -->
+        <div id="logged-in-container" style="display: flex; align-items: center; gap: 10px;">
+            <span style="color:#ccc;">Logged in as <strong id="logged-in-email" style="color:#fff;"></strong></span>
+            <button id="logout-btn" class="action-btn" style="background:#333;">Log out</button>
+        </div>
+
+        <p style="color: #ccc; margin-top: 16px;">Website: <a id="homepage-link" href="#" style="color: #ff4500; text-decoration: none;">synk-official.com</a></p>
+        <p style="color: #ccc; margin-bottom: 10px;">Support: <a id="support-mail" href="mailto:support@synk-official.com" style="color: #ff4500; text-decoration: none;">support@synk-official.com</a></p>
+        <p style="color: #ccc;">Version: <span id="app-version">1.0.0</span></p>
+    </div>
+
+    <div style="border-top: 1px solid #333; padding-top: 20px; margin-top: 20px;">
+        <h3 style="color: #ff4500; margin-bottom: 12px;">What's New</h3>
+        <div id="update-entries" style="display:flex; flex-direction:column; gap:14px;"></div>
+    </div>
+</div>

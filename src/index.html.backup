@@ -1,0 +1,2908 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Synk - Notion & Google Calendar Sync</title>
+    <link rel="icon" type="image/x-icon" href="../assets/icon.ico">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #0a0a0a !important;
+            color: #fff !important;
+            line-height: 1.6;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        /* Custom Titlebar */
+        .titlebar {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 32px;
+            background: #0f0f0f;
+            border-bottom: 1px solid #222;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 0 16px;
+            z-index: 3000; /* Above overlays (auth/plan), but below toasts (10000) */
+            -webkit-app-region: drag;
+        }
+
+        .titlebar-title {
+            font-size: 13px;
+            color: #fff;
+            font-weight: 500;
+        }
+
+        .titlebar-controls {
+            display: flex;
+            gap: 8px;
+            -webkit-app-region: no-drag;
+        }
+
+        .titlebar-button {
+            width: 32px;
+            height: 32px;
+            border: none;
+            background: transparent;
+            cursor: pointer;
+            transition: background-color 0.2s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #fff;
+            font-size: 12px;
+            font-family: 'Segoe UI', sans-serif;
+            -webkit-app-region: no-drag; /* Ensure clicks are not intercepted by draggable titlebar */
+            pointer-events: auto; /* Explicitly allow pointer events on buttons */
+        }
+
+        .titlebar-button:hover {
+            background-color: rgba(255, 255, 255, 0.1);
+        }
+
+        .titlebar-button.close:hover {
+            background-color: #e81123;
+        }
+
+        .titlebar-button.minimize::before {
+            content: "-";
+            font-weight: bold;
+        }
+
+        .titlebar-button.maximize::before {
+            content: "□";
+            font-weight: bold;
+        }
+
+        .titlebar-button.close::before {
+            content: "×";
+            font-weight: bold;
+            font-size: 14px;
+        }
+
+        /* Dragon's Breath accent for update preference radios */
+        input[type="radio"] { accent-color: #ff4500; }
+        input[type="radio"]:checked + span { color: #ff7043; }
+
+        /* App Shell Layout */
+        .app-container {
+            display: flex;
+            height: 100vh;
+            background: #000;
+            border: 2px solid #333; /* Custom border as requested */
+            border-radius: 8px;
+            padding-top: 32px; /* Space for titlebar */
+        }
+
+        /* Left Sidebar */
+        .sidebar {
+            width: 240px;
+            background: #0d0d0d;
+            border-right: 1px solid #222;
+            display: flex;
+            flex-direction: column;
+            padding: 20px 0;
+        }
+
+        .sidebar-header {
+            padding: 0 20px 20px;
+            border-bottom: 1px solid #333;
+            margin-bottom: 20px;
+        }
+
+        .app-logo {
+            font-size: 1.5rem;
+            font-weight: 700;
+            background: linear-gradient(135deg, #ff4500, #dc143c);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .sidebar-nav {
+            flex: 1;
+            padding: 0 10px;
+        }
+
+        .sidebar-footer {
+            padding: 20px;
+            border-top: 1px solid #222;
+        }
+
+        .manage-plan-link {
+            color: #888;
+            text-decoration: none;
+            font-size: 0.9rem;
+            transition: color 0.3s ease;
+            cursor: pointer;
+            display: block;
+            text-align: center;
+            font-style: italic;
+        }
+
+        .manage-plan-link:hover {
+            color: #ff4500;
+        }
+
+        .nav-item {
+            display: flex;
+            align-items: center;
+            padding: 12px 15px;
+            margin-bottom: 5px;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            color: #ccc;
+            text-decoration: none;
+        }
+
+        .nav-item:hover {
+            background: linear-gradient(135deg, rgba(255, 69, 0, 0.2), rgba(220, 20, 60, 0.2));
+            color: #fff;
+        }
+
+        .nav-item.active {
+            background: linear-gradient(135deg, #ff4500, #dc143c);
+            color: #fff;
+            border-left: 3px solid #ff4500;
+        }
+
+        .nav-icon {
+            margin-right: 12px;
+            font-size: 1.1rem;
+            width: 20px;
+            text-align: center;
+        }
+
+        /* Main Content Area */
+        .main-content {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            background: #000;
+        }
+
+        /* Top Header Bar */
+        .header-bar {
+            height: 60px;
+            background: #111;
+            border-bottom: 1px solid #333;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 20px;
+        }
+
+        .header-title {
+            font-size: 1.1rem;
+            font-weight: 600;
+            color: #fff;
+        }
+
+        .status-pills {
+            display: flex;
+            gap: 10px;
+        }
+
+        .status-pill {
+            padding: 6px 14px;
+            border-radius: 16px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+            border: 1px solid transparent;
+        }
+
+        .status-pill::before {
+            content: '';
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            display: inline-block;
+        }
+
+        .status-pill.connected {
+            background: linear-gradient(135deg, rgba(255, 69, 0, 0.15), rgba(220, 20, 60, 0.15));
+            color: #ff4500;
+            border: 1px solid rgba(255, 69, 0, 0.3);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .status-pill.connected::before {
+            background: #ff4500;
+            box-shadow: 0 0 6px rgba(255, 69, 0, 0.6);
+            animation: pulse 2s infinite;
+        }
+
+        .status-pill.connected {
+            box-shadow: 0 0 15px rgba(255, 69, 0, 0.4), 0 0 30px rgba(255, 69, 0, 0.2);
+        }
+
+        .status-pill.connected::after {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: -100%;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(90deg, 
+                transparent, 
+                rgba(255, 69, 0, 0.1), 
+                rgba(220, 20, 60, 0.1), 
+                rgba(255, 101, 0, 0.1), 
+                transparent
+            );
+            animation: smokeFlow 4s ease-in-out infinite;
+        }
+
+        @keyframes smokeFlow {
+            0% { 
+                left: -100%; 
+                opacity: 0;
+            }
+            20% { 
+                opacity: 0.6;
+            }
+            80% { 
+                opacity: 0.6;
+            }
+            100% { 
+                left: 100%; 
+                opacity: 0;
+            }
+        }
+
+        .status-pill.disconnected {
+            background: linear-gradient(135deg, rgba(128, 128, 128, 0.15), rgba(96, 96, 96, 0.15));
+            color: #888;
+            border: 1px solid rgba(128, 128, 128, 0.3);
+        }
+
+        .status-pill.disconnected::before {
+            background: #888;
+            box-shadow: 0 0 6px rgba(128, 128, 128, 0.6);
+        }
+
+        /* Content Area */
+        .content-area {
+            flex: 1;
+            padding: 20px;
+            overflow-y: auto;
+            background: #0a0a0a;
+        }
+
+        .tab-content {
+            display: none;
+            height: 100%;
+        }
+
+        .tab-content.active {
+            display: block;
+        }
+
+        /* Cards */
+        .content-card {
+            background: linear-gradient(135deg, #0f0f0f 0%, #0a0a0a 100%);
+            border: 1px solid #222;
+            border-radius: 16px;
+            padding: 24px;
+            margin-bottom: 24px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.6);
+            transition: all 0.3s ease;
+        }
+
+        .content-card:hover {
+            border-color: #333;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.8);
+            transform: translateY(-2px);
+        }
+
+        .card-title {
+            font-size: 1.3rem;
+            font-weight: 700;
+            margin-bottom: 18px;
+            color: #fff;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .card-title::before {
+            content: '';
+            width: 4px;
+            height: 24px;
+            background: linear-gradient(135deg, #ff4500, #dc143c);
+            border-radius: 2px;
+        }
+
+        /* Sync Tab Specific Styles */
+        .sync-container {
+            display: flex;
+            align-items: flex-start;
+            justify-content: center;
+            gap: 30px;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+        }
+
+        .service-section {
+            flex: 1;
+            max-width: 45%;
+            min-width: 400px;
+            background: linear-gradient(135deg, #111 0%, #0f0f0f 100%);
+            border: 1px solid #333;
+            border-radius: 16px;
+            padding: 24px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+            transition: max-height 1.2s cubic-bezier(0.4, 0, 0.2, 1), 
+                        padding-bottom 1.2s cubic-bezier(0.4, 0, 0.2, 1),
+                        box-shadow 0.5s ease,
+                        border-color 0.5s ease;
+            max-height: 1000px; /* Default expanded height */
+            overflow: hidden;
+        }
+
+        .service-section:hover {
+            border-color: #444;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+        }
+
+        .service-section .list-container {
+            transition: opacity 0.8s cubic-bezier(0.4, 0, 0.2, 1) 0.4s,
+                        max-height 1.2s cubic-bezier(0.4, 0, 0.2, 1),
+                        margin-top 1.2s cubic-bezier(0.4, 0, 0.2, 1),
+                        padding 1.2s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .sync-icon-container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 8px;
+            align-self: center;
+            flex-shrink: 0;
+        }
+
+        .sync-icon {
+            font-size: 32px;
+            background: linear-gradient(135deg, #ff4500, #dc143c);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .refresh-btn {
+            background: rgba(255, 69, 0, 0.1);
+            border: 1px solid #ff4500;
+            border-radius: 8px;
+            padding: 8px;
+            cursor: pointer;
+            color: #ff4500;
+            transition: all 0.2s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .refresh-btn:hover {
+            background: rgba(255, 69, 0, 0.2);
+            transform: scale(1.05);
+        }
+
+        .refresh-btn:active {
+            transform: scale(0.95);
+        }
+
+        .refresh-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .refresh-btn svg {
+            transition: transform 0.3s ease;
+        }
+
+        .refresh-btn.spinning svg {
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+        }
+
+        .service-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 20px;
+            padding-bottom: 15px;
+            border-bottom: 1px solid #333;
+        }
+
+        .service-title {
+            font-size: 1.3rem;
+            font-weight: 600;
+            color: #fff;
+        }
+
+        .connect-btn {
+            background: linear-gradient(135deg, #ff4500, #dc143c);
+            color: #fff;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 12px;
+            font-weight: 600;
+            font-size: 0.9rem;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 16px rgba(255, 69, 0, 0.3);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .connect-btn::before {
+            content: '';
+            position: absolute;
+            top: -50%;
+            left: -50%;
+            width: 200%;
+            height: 200%;
+            background: linear-gradient(45deg, transparent, rgba(255, 255, 255, 0.4), transparent);
+            transform: translateX(-100%) translateY(-100%) rotate(45deg);
+            transition: transform 0.6s ease;
+        }
+
+        .connect-btn:hover::before {
+            transform: translateX(100%) translateY(100%) rotate(45deg);
+        }
+
+        .connect-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px rgba(255, 69, 0, 0.4);
+            background: linear-gradient(135deg, #ff6500, #ff1744);
+        }
+
+        .connect-btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .status {
+            padding: 10px;
+            border-radius: 6px;
+            margin: 10px 0;
+            font-size: 0.9rem;
+        }
+
+        .status.success {
+            background: linear-gradient(135deg, rgba(102, 126, 234, 0.2), rgba(118, 75, 162, 0.2)) !important;
+            color: #a78bfa !important;
+            border: 1px solid #667eea;
+        }
+
+        .status.error {
+            background: #4d1a1a !important;
+            color: #f87171 !important;
+            border: 1px solid #ef4444;
+        }
+
+        .list-container {
+            background: #111;
+            border: 1px solid #333;
+            border-radius: 8px;
+            padding: 15px;
+            margin-top: 15px;
+            min-height: 200px;
+            max-height: 300px;
+            overflow-y: auto;
+            transition: opacity 0.8s cubic-bezier(0.4, 0, 0.2, 1) 0.4s,
+                        max-height 1.2s cubic-bezier(0.4, 0, 0.2, 1),
+                        margin-top 1.2s cubic-bezier(0.4, 0, 0.2, 1),
+                        padding 1.2s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .calendar-section {
+            margin-bottom: 15px;
+        }
+
+        .section-header {
+            display: flex;
+            align-items: center;
+            padding: 8px 12px;
+            background: #2a2a2a;
+            border: 1px solid #333;
+            border-radius: 6px;
+            cursor: pointer;
+            margin-bottom: 8px;
+            transition: background 0.2s;
+        }
+
+        .section-header:hover {
+            background: #333;
+        }
+
+        .section-arrow {
+            margin-right: 8px;
+            font-size: 12px;
+            transition: transform 0.2s;
+        }
+
+        .section-title {
+            font-weight: 500;
+            color: #ccc;
+            font-size: 14px;
+        }
+
+        .section-content {
+            margin-left: 20px;
+        }
+
+        .calendar-item, .database-item {
+            background: #0f0f0f;
+            border: 1px solid #222;
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 10px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            outline: none;
+            position: relative;
+            width: 100%;
+            text-align: left;
+            font-family: inherit;
+            color: inherit;
+        }
+
+        .calendar-item:hover, .database-item:hover,
+        .calendar-item:focus, .database-item:focus {
+            border-color: #ff4500;
+            background: #1a1a1a;
+            outline: 2px solid rgba(255, 69, 0, 0.3);
+        }
+
+        .calendar-item.selected, .database-item.selected {
+            border-color: #ff4500;
+            background: linear-gradient(135deg, rgba(255, 69, 0, 0.1), rgba(220, 20, 60, 0.1));
+            box-shadow: 0 0 10px rgba(255, 69, 0, 0.3);
+        }
+
+        /* Remove strong orange sidebar for primary calendar */
+        .calendar-item.primary {
+            border-left: none !important; /* fully remove sidebar */
+            background: #0f0f0f; /* keep consistent background */
+        }
+
+        .item-title {
+            font-weight: 600;
+            margin-bottom: 5px;
+            color: #fff;
+        }
+
+        .item-meta {
+            font-size: 0.85rem;
+            color: #ccc;
+        }
+
+        .demo-badge {
+            display: inline-block;
+            background: #333;
+            color: #667eea;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 0.7rem;
+            margin-left: 8px;
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 40px 20px;
+            color: #ccc;
+        }
+
+        .empty-state h3 {
+            margin-bottom: 10px;
+            color: #fff;
+        }
+
+        /* Dashboard Styles */
+        .dashboard-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+
+        .connection-card {
+            background: #0f0f0f;
+            border: 1px solid #222;
+            border-radius: 12px;
+            padding: 20px;
+        }
+
+        .connection-status {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 10px;
+        }
+
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+        }
+
+        .status-dot.connected {
+            background: linear-gradient(135deg, #ff4500, #dc143c);
+        }
+
+        .status-dot.disconnected {
+            background: #f87171;
+        }
+
+        /* Settings Styles */
+        .setting-item {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 15px 0;
+            border-bottom: 1px solid #333;
+        }
+
+        .setting-item:last-child {
+            border-bottom: none;
+        }
+
+        .setting-info h3 {
+            color: #fff;
+            margin-bottom: 5px;
+        }
+
+        .setting-info p {
+            color: #ccc;
+            font-size: 0.9rem;
+        }
+
+        .status-indicator {
+            padding: 4px 8px;
+            border-radius: 4px;
+            background: rgba(76, 175, 80, 0.1);
+            border: 1px solid #4CAF50;
+            font-size: 12px;
+        }
+
+        .action-btn {
+            background: linear-gradient(135deg, #ff4500, #dc143c);
+            color: #fff;
+            border: 1px solid #ff4500;
+            padding: 8px 16px;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .action-btn::before {
+            content: '';
+            position: absolute;
+            top: -50%;
+            left: -50%;
+            width: 200%;
+            height: 200%;
+            background: linear-gradient(45deg, transparent, rgba(255, 255, 255, 0.4), transparent);
+            transform: translateX(-100%) translateY(-100%) rotate(45deg);
+            transition: transform 0.6s ease;
+        }
+
+        .action-btn:hover::before {
+            transform: translateX(100%) translateY(100%) rotate(45deg);
+        }
+
+        .action-btn:hover {
+            background: linear-gradient(135deg, #ff6500, #ff1744);
+            border-color: #ff6500;
+            transform: translateY(-1px);
+        }
+
+        .spinner {
+            display: inline-block;
+            width: 12px;
+            height: 12px;
+            border: 2px solid #333;
+            border-top: 2px solid #ff4500;
+            border-right: 2px solid #dc143c;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            box-shadow: 0 0 6px rgba(255, 69, 0, 0.3);
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        /* OAuth Status Styles */
+        .oauth-status {
+            margin: 15px 0;
+            padding: 15px;
+            border-radius: 8px;
+            background: #0f0f0f;
+            border: 1px solid #222;
+        }
+
+        .oauth-loading, .oauth-success, .oauth-error {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            text-align: center;
+            gap: 10px;
+        }
+
+        .oauth-loading .spinner {
+            width: 24px;
+            height: 24px;
+            border: 2px solid #333;
+            border-top: 2px solid #ff4500;
+            border-right: 2px solid #dc143c;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            box-shadow: 0 0 8px rgba(255, 69, 0, 0.3);
+        }
+
+        .oauth-loading span {
+            color: #fff;
+            font-weight: 500;
+        }
+
+        .oauth-step {
+            color: #ccc;
+            font-size: 0.9rem;
+            margin: 0;
+        }
+
+        .success-icon, .error-icon {
+            font-size: 32px;
+            margin-bottom: 5px;
+        }
+
+        .oauth-success span {
+            color: #4CAF50;
+            font-weight: 500;
+        }
+
+        .oauth-error span {
+            color: #f44336;
+            font-weight: 500;
+        }
+
+        .retry-btn {
+            background: linear-gradient(135deg, #ff4500, #dc143c);
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            margin-top: 10px;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 16px rgba(255, 69, 0, 0.3);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .retry-btn::before {
+            content: '';
+            position: absolute;
+            top: -50%;
+            left: -50%;
+            width: 200%;
+            height: 200%;
+            background: linear-gradient(45deg, transparent, rgba(255, 255, 255, 0.4), transparent);
+            transform: translateX(-100%) translateY(-100%) rotate(45deg);
+            transition: transform 0.6s ease;
+        }
+
+        .retry-btn:hover::before {
+            transform: translateX(100%) translateY(100%) rotate(45deg);
+        }
+
+        .retry-btn:hover {
+            background: linear-gradient(135deg, #ff6500, #ff1744);
+            transform: translateY(-1px);
+            box-shadow: 0 6px 20px rgba(255, 69, 0, 0.4);
+        }
+
+        .retry-btn:disabled {
+            background: #333;
+            cursor: not-allowed;
+            transform: none;
+            box-shadow: none;
+        }
+
+        /* Sync Status Panel */
+        .sync-status-panel {
+            position: fixed;
+            bottom: 24px;
+            right: 24px;
+            width: 360px;
+            background: linear-gradient(135deg, #111 0%, #0f0f0f 100%);
+            border: 1px solid #333;
+            border-radius: 16px;
+            padding: 24px;
+            z-index: 1000;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6);
+            backdrop-filter: blur(10px);
+            transition: all 0.3s ease;
+        }
+
+        .sync-status-panel:hover {
+            border-color: #444;
+            box-shadow: 0 12px 48px rgba(0, 0, 0, 0.8);
+        }
+
+        .sync-status-header h3 {
+            font-size: 16px;
+            font-weight: 600;
+            color: #fff;
+            margin-bottom: 15px;
+        }
+
+        .sync-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+            padding: 8px 0;
+        }
+
+        .sync-label {
+            color: #ccc;
+            font-size: 14px;
+        }
+
+        .sync-value {
+            color: #fff;
+            font-size: 14px;
+            font-weight: 500;
+        }
+
+        .sync-value.selected {
+            color: #4CAF50;
+        }
+
+        .sync-value.error {
+            color: #f44336;
+        }
+
+        .sync-value.syncing {
+            color: #2196F3;
+        }
+
+        /* Professional Sync Status Panel */
+        .sync-status-panel {
+            position: fixed;
+            bottom: 20px;
+            left: calc(50% + 120px);
+            transform: translateX(-50%);
+            background: linear-gradient(135deg, #0f0f0f 0%, #0a0a0a 100%);
+            border: 1px solid #222;
+            border-radius: 16px;
+            padding: 20px 24px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6);
+            backdrop-filter: blur(10px);
+            z-index: 1000;
+            min-width: 400px;
+            max-width: 600px;
+        }
+
+        .sync-status-content {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .sync-indicator {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .sync-dot {
+            width: 14px;
+            height: 14px;
+            border-radius: 50%;
+            background: #666;
+            transition: all 0.3s ease;
+            flex-shrink: 0;
+            position: relative;
+        }
+
+        .sync-dot::before {
+            content: '';
+            position: absolute;
+            top: -2px;
+            left: -2px;
+            right: -2px;
+            bottom: -2px;
+            border-radius: 50%;
+            background: inherit;
+            opacity: 0.3;
+            transform: scale(0);
+            transition: transform 0.3s ease;
+        }
+
+        .sync-dot.idle {
+            background: #666;
+        }
+
+        .sync-dot.ready {
+            background: #ff4500;
+            box-shadow: 0 0 12px rgba(255, 69, 0, 0.5);
+        }
+
+        .sync-dot.ready::before {
+            transform: scale(1);
+        }
+
+        .sync-dot.syncing {
+            background: #ff6500;
+            box-shadow: 0 0 12px rgba(255, 101, 0, 0.5);
+            animation: pulse 1.5s infinite;
+        }
+
+        .sync-dot.syncing::before {
+            transform: scale(1);
+            animation: ripple 1.5s infinite;
+        }
+
+        .sync-dot.error {
+            background: #ef4444;
+            box-shadow: 0 0 12px rgba(239, 68, 68, 0.5);
+        }
+
+        .sync-dot.error::before {
+            transform: scale(1);
+        }
+
+        @keyframes pulse {
+            0%, 100% { transform: scale(1); opacity: 1; }
+            50% { transform: scale(1.1); opacity: 0.8; }
+        }
+
+        @keyframes ripple {
+            0% { transform: scale(0); opacity: 0.8; }
+            100% { transform: scale(2); opacity: 0; }
+        }
+
+        .sync-status-text {
+            color: #fff;
+            font-size: 14px;
+            font-weight: 500;
+            flex: 1;
+        }
+
+        .sync-details {
+            padding-left: 26px;
+            border-left: 3px solid #ff4500;
+            margin-left: 7px;
+            margin-top: 12px;
+            animation: slideIn 0.3s ease;
+        }
+
+        @keyframes slideIn {
+            from { opacity: 0; transform: translateY(-10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .sync-pair-info {
+            display: flex;
+            align-items: center;
+            gap: 14px;
+            margin-bottom: 12px;
+        }
+
+        .sync-source, .sync-target {
+            color: #ff4500;
+            font-size: 12px;
+            font-weight: 600;
+            background: linear-gradient(135deg, rgba(255, 69, 0, 0.15), rgba(220, 20, 60, 0.15));
+            padding: 6px 12px;
+            border-radius: 8px;
+            border: 1px solid rgba(255, 69, 0, 0.3);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            max-width: 120px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .sync-arrow {
+            color: #ff4500;
+            font-size: 18px;
+            font-weight: bold;
+            animation: pulse 2s infinite;
+        }
+
+        .sync-stats {
+            display: flex;
+            gap: 20px;
+            font-size: 11px;
+            color: #aaa;
+            font-weight: 500;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .sync-stats span {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .sync-stats span::before {
+            content: '•'; 
+            color: #ff4500; /* Dragon's breath orange */
+            text-shadow: 0 0 6px rgba(255, 69, 0, 0.5);
+            font-size: 14px;
+        }
+
+        .last-sync, .sync-count {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+
+        .last-sync::before {
+            content: "T";
+            color: #ff4500;
+            text-shadow: 0 0 6px rgba(255, 69, 0, 0.5);
+            font-size: 10px;
+        }
+
+        .sync-count::before {
+            content: "C";
+            color: #ff4500;
+            text-shadow: 0 0 6px rgba(255, 69, 0, 0.5);
+            font-size: 10px;
+        }
+
+        /* Toggle Switch (UI-only) */
+        .switch {
+            position: relative;
+            display: inline-block;
+            width: 46px;
+            height: 26px;
+        }
+        .switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+        .slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: #2a2a2a;
+            border: 1px solid #3a3a3a;
+            transition: 0.2s ease;
+            border-radius: 20px;
+            box-shadow: inset 0 0 6px rgba(0,0,0,0.4);
+        }
+        .slider:before {
+            content: "";
+            position: absolute;
+            height: 20px;
+            width: 20px;
+            left: 3px;
+            bottom: 3px;
+            background-color: #bbb;
+            border-radius: 50%;
+            transition: 0.2s ease;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.5);
+        }
+        .switch input:checked + .slider {
+            background: linear-gradient(135deg, #ff4500, #dc143c);
+            border-color: #ff4500;
+        }
+        .switch input:checked + .slider:before {
+            transform: translateX(20px);
+            background: #fff;
+        }
+
+        /* Toggle Switch Styles */
+        .toggle-switch {
+            position: relative;
+            display: inline-block;
+            width: 50px;
+            height: 26px;
+            flex-shrink: 0;
+        }
+
+        .toggle-switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+
+        .toggle-slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: #333;
+            transition: 0.3s;
+            border-radius: 26px;
+            border: 1px solid #444;
+        }
+
+        .toggle-slider:before {
+            position: absolute;
+            content: "";
+            height: 18px;
+            width: 18px;
+            left: 4px;
+            bottom: 3px;
+            background-color: #666;
+            transition: 0.3s;
+            border-radius: 50%;
+        }
+
+        .toggle-switch input:checked + .toggle-slider {
+            background: linear-gradient(135deg, #ff4500, #dc143c);
+            border-color: #ff4500;
+        }
+
+        .toggle-switch input:checked + .toggle-slider:before {
+            transform: translateX(24px);
+            background-color: #fff;
+        }
+
+        .toggle-slider:hover {
+            box-shadow: 0 0 8px rgba(255, 69, 0, 0.3);
+        }
+
+    </style>
+</head>
+<body>
+    <!-- Custom Titlebar -->
+    <div class="titlebar">
+        <div class="titlebar-title">Synk - Notion & Google Calendar Sync</div>
+        <div class="titlebar-controls">
+            <button class="titlebar-button minimize" id="minimize-btn"></button>
+            <button class="titlebar-button maximize" id="maximize-btn"></button>
+            <button class="titlebar-button close" id="close-btn"></button>
+        </div>
+    </div>
+
+    <div class="app-container">
+        <!-- Left Sidebar -->
+        <div class="sidebar">
+            <div class="sidebar-header">
+                <div class="app-logo">Synk</div>
+            </div>
+            <nav class="sidebar-nav">
+                <div class="nav-item active" data-tab="sync">
+                    <span class="nav-icon">↔</span>
+                    <span>Sync</span>
+                </div>
+                <div class="nav-item" data-tab="settings">
+                    <span class="nav-icon">⚙</span>
+                    <span>Settings</span>
+                </div>
+
+                <div class="nav-item" data-tab="about">
+                    <span class="nav-icon">i</span>
+                    <span>About</span>
+                </div>
+            </nav>
+            <div class="sidebar-footer">
+                <a href="#" class="manage-plan-link" id="manage-plan-link" onclick="window.electronAPI.openExternal('https://billing.stripe.com/p/login/7sYaEQaRD57SghT5hSbMQ00'); return false;">Manage Plan</a>
+            </div>
+        </div>
+
+        <!-- Main Content -->
+        <div class="main-content">
+            <!-- Header Bar -->
+            <div class="header-bar">
+                <div class="header-title" id="header-title">Dashboard</div>
+                <div class="status-pills">
+                    <div class="status-pill disconnected" id="google-pill">Google</div>
+                    <div class="status-pill disconnected" id="notion-pill">Notion</div>
+                </div>
+            </div>
+
+            <!-- Content Area -->
+            <div class="content-area">
+                <!-- Sync Tab - Content loaded from tabs/sync-tab.html -->
+                <div class="tab-content active" id="sync-tab">
+                    <!-- Loading sync tab content... -->
+                </div>
+
+                <!-- Settings Tab - Content loaded from tabs/settings-tab.html -->
+                <div class="tab-content" id="settings-tab">
+                    <!-- Loading settings tab content... -->
+                </div>
+
+                <!-- About Tab - Content loaded from tabs/about-tab.html -->
+                <div class="tab-content" id="about-tab">
+                    <!-- Loading about tab content... -->
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Fullscreen Auth Overlay -->
+    <div id="auth-overlay" style="position: fixed; inset: 0; background: radial-gradient(1200px 800px at 20% -10%, rgba(255,69,0,0.15), transparent), radial-gradient(1000px 700px at 120% 120%, rgba(220,20,60,0.12), transparent), linear-gradient(180deg, #050505 0%, #0a0a0a 100%); display: none; z-index: 2000; align-items: center; justify-content: center; opacity: 0; transition: opacity 300ms ease-in-out;">
+        <div style="width: 100%; max-width: 420px; background: linear-gradient(135deg, #111 0%, #0f0f0f 100%); border: 1px solid #333; border-radius: 16px; padding: 32px; box-shadow: 0 20px 60px rgba(0,0,0,0.6); transform: scale(0.95); transition: transform 300ms ease-in-out;">
+            <div style="text-align: center; margin-bottom: 24px;">
+                <div style="font-size: 28px; font-weight: 800; background: linear-gradient(135deg, #ff4500, #dc143c); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">Welcome Back</div>
+                <div style="color:#bbb; margin-top: 8px;">Log in to continue syncing</div>
+            </div>
+
+            <div style="display:flex; flex-direction: column; gap: 12px; margin-top: 10px;">
+                <input id="auth-email" type="email" placeholder="Email" style="background:#0d0d0d; color:#fff; border:1px solid #333; border-radius:10px; padding:14px 16px; outline:none; font-size: 14px; transition: border-color 300ms ease-in-out;" onfocus="this.style.borderColor='#ff4500'" onblur="this.style.borderColor='#333'" />
+                <input id="auth-password" type="password" placeholder="Password" style="background:#0d0d0d; color:#fff; border:1px solid #333; border-radius:10px; padding:14px 16px; outline:none; font-size: 14px; transition: border-color 300ms ease-in-out;" onfocus="this.style.borderColor='#ff4500'" onblur="this.style.borderColor='#333'" />
+                
+                <div style="text-align: right; margin-top: -4px;">
+                    <a href="#" id="forgot-password-link" onclick="window.electronAPI.openExternal('https://synk-official.com/reset-password'); return false;" style="color:#ff7043; text-decoration:none; font-size: 13px; transition: color 300ms ease-in-out;" onmouseover="this.style.color='#ff4500'" onmouseout="this.style.color='#ff7043'">Forgot password?</a>
+                </div>
+                
+                <button id="login-btn" class="action-btn" style="width: 100%; margin-top: 8px; padding: 14px; font-size: 15px; font-weight: 600; transition: all 300ms ease-in-out;">Log In</button>
+                
+                <p id="auth-status" style="color:#9e9e9e; min-height: 18px; text-align:center; margin-top:4px; transition: color 300ms ease-in-out;"></p>
+            </div>
+
+            <div style="margin-top: 20px; padding-top: 20px; border-top: 1px solid #222; text-align:center;">
+                <div style="color:#999; font-size: 13px; margin-bottom: 8px;">Don't have an account?</div>
+                <a href="#" onclick="window.electronAPI.openExternal('https://synk-official.com/signup'); return false;" style="color:#ff7043; text-decoration:none; font-size: 14px; font-weight: 600; transition: color 300ms ease-in-out;" onmouseover="this.style.color='#ff4500'" onmouseout="this.style.color='#ff7043'">Sign up on our website ?</a>
+            </div>
+
+            <div style="margin-top: 16px; text-align:center; color:#777; font-size: 11px;">
+                By continuing you agree to our <a href="#" onclick="window.electronAPI.openExternal('https://synk-official.com/terms.html'); return false;" style="color:#ff7043; text-decoration:none; transition: color 300ms ease-in-out;" onmouseover="this.style.color='#ff4500'" onmouseout="this.style.color='#ff7043'">Terms</a> and <a href="#" onclick="window.electronAPI.openExternal('https://synk-official.com/privacy.html'); return false;" style="color:#ff7043; text-decoration:none; transition: color 300ms ease-in-out;" onmouseover="this.style.color='#ff4500'" onmouseout="this.style.color='#ff7043'">Privacy</a>.
+            </div>
+        </div>
+    </div>
+
+    <!-- Professional Sync Status Panel -->
+    <div class="sync-status-panel" id="sync-status-panel">
+        <div class="sync-status-content">
+            <div class="sync-indicator" id="sync-indicator">
+                <div class="sync-dot" id="sync-dot"></div>
+                <span class="sync-status-text" id="sync-status-text">Select one Notion database and one Google calendar to sync</span>
+            </div>
+            <div class="sync-details" id="sync-details" style="display: none;">
+                <div class="sync-pair-info">
+                    <span class="sync-source" id="sync-source">No selection</span>
+                    <span class="sync-arrow">⟷</span>
+                    <span class="sync-target" id="sync-target">No selection</span>
+                </div>
+                <div class="sync-stats" id="sync-stats">
+                    <span class="last-sync" id="last-sync">Never synced</span>
+                    <span class="sync-count" id="sync-count">0 syncs</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast notification for errors -->
+    <div id="error-toast" style="position: fixed; top: 20px; right: 20px; background: #f44336; color: white; padding: 15px; border-radius: 5px; display: none; z-index: 1000; max-width: 300px;">
+        <span id="error-message"></span>
+        <button onclick="hideErrorToast()" style="background: none; border: none; color: white; float: right; cursor: pointer; font-size: 16px; margin-left: 10px;">&times;</button>
+    </div>
+
+    <script>
+        // Plan detection and display (prefer backend /me when logged in)
+        let __planPoller = null;
+        async function loadUserPlan() {
+            try {
+                console.log('?? Loading user plan...');
+                const base = (window.electronAPI && window.electronAPI.backendUrl) ? window.electronAPI.backendUrl : 'https://synk-web.onrender.com';
+                const token = localStorage.getItem('auth_token');
+
+                if (token) {
+                    try {
+                        const meResp = await fetch(base + '/me', { headers: { 'Authorization': 'Bearer ' + token } });
+                        const me = await meResp.json().catch(() => ({ success: false }));
+                        if (me && me.success) {
+                            updatePlanDisplay({
+                                type: me.plan?.type || 'none',
+                                billingCycle: me.plan?.billingCycle || me.billing_period || null,
+                                description: me.plan?.description || undefined,
+                                is_trial: !!me.is_trial,
+                                trial_end: me.trial_end || null
+                            });
+                            return;
+                        }
+                    } catch (e) {
+                        console.warn('?? /me fetch failed, falling back to local plan file:', e.message);
+                    }
+                }
+
+                // If no token or /me failed, show "no current plan" (do NOT use local file when logged out)
+                updatePlanDisplay({
+                    type: 'none',
+                    name: 'No current plan',
+                    description: 'No current plan. Log in and purchase a plan to enable premium features.',
+                    features: [],
+                    status: 'none'
+                });
+            } catch (error) {
+                console.error('? Error loading user plan:', error);
+                updatePlanDisplay({
+                    type: 'none',
+                    name: 'No current plan',
+                    description: 'No current plan. Log in and purchase a plan to enable premium features.',
+                    features: [],
+                    status: 'none'
+                });
+            }
+        }
+
+        // Start simple polling of /me to reflect Supabase changes quickly
+        function startPlanPolling() {
+            if (__planPoller) clearInterval(__planPoller);
+            __planPoller = setInterval(() => {
+                const token = localStorage.getItem('auth_token');
+                if (!token) return; // only poll when logged in
+                const base = (window.electronAPI && window.electronAPI.backendUrl) ? window.electronAPI.backendUrl : 'https://synk-web.onrender.com';
+                fetch(base + '/me', { headers: { 'Authorization': 'Bearer ' + token } })
+                    .then(r => r.json())
+                    .then(me => {
+                        if (me && me.success) {
+                            updatePlanDisplay({
+                                type: me.plan?.type || 'none',
+                                billingCycle: me.plan?.billingCycle || me.billing_period || null,
+                                description: me.plan?.description || undefined,
+                                is_trial: !!me.is_trial,
+                                trial_end: me.trial_end || null
+                            });
+                        }
+                    })
+                    .catch(() => {});
+            }, 60000);
+        }
+        
+        function updatePlanDisplay(planData) {
+            const planTitle = document.getElementById('plan-title');
+            const planCycle = document.getElementById('plan-cycle');
+            const planTrialTitle = document.getElementById('plan-trial-title');
+            const planTrial = document.getElementById('plan-trial');
+            const planDescriptionElement = document.getElementById('plan-description');
+            const trialBadge = document.getElementById('trial-badge');
+
+            // Dragon's breath orange styling helper
+            const setDragonOrange = (el) => {
+                if (!el) return;
+                el.style.color = '#ff4500';
+                el.style.textShadow = '0 0 8px rgba(255,69,0,0.7), 0 0 16px rgba(255,69,0,0.4)';
+            };
+            
+            if (planTitle && planCycle && planDescriptionElement) {
+                // Detect states
+                const noPlan = !planData || !planData.type || planData.type === 'none' || planData.type === 'unknown' || planData.type === null;
+                const isTrial = !!(planData && (planData.is_trial === true || planData.type === 'trial'));
+
+                // Badge visibility
+                if (trialBadge) {
+                    trialBadge.style.display = isTrial ? 'inline-block' : 'none';
+                }
+
+                // Title
+                let titleText = 'No current plan';
+                if (!noPlan) {
+                    if (planData.type === 'ultimate') titleText = 'Ultimate';
+                    else if (planData.type === 'pro' || isTrial) titleText = 'Pro';
+                    else if (planData.type === 'expired') titleText = 'Trial expired';
+                }
+                planTitle.textContent = titleText;
+
+                // Cycle (only for paid plans and non-trial, and only if billingCycle is provided and not null)
+                if (!noPlan && !isTrial && (planData.type === 'pro' || planData.type === 'ultimate') && planData.billingCycle && planData.billingCycle !== null && planData.billingCycle !== 'null') {
+                    const cycle = planData.billingCycle.toLowerCase();
+                    planCycle.textContent = cycle.includes('year') ? 'Yearly' : 'Monthly';
+                } else {
+                    planCycle.textContent = '';
+                }
+
+                // Trial days line (from real backend: trial_end or fallback trialDaysRemaining)
+                if (planTrial && planTrialTitle) {
+                    let daysLeft = null;
+                    if (planData && planData.trial_end) {
+                        const ms = new Date(planData.trial_end) - new Date();
+                        daysLeft = Math.max(0, Math.ceil(ms / (1000 * 60 * 60 * 24)));
+                    } else if (planData && typeof planData.trialDaysRemaining === 'number') {
+                        daysLeft = planData.trialDaysRemaining;
+                    }
+
+                    if (isTrial && daysLeft !== null) {
+                        planTrialTitle.style.display = 'none';
+                        planTrial.style.display = 'block';
+                        planTrial.textContent = `${daysLeft} days left`;
+                        setDragonOrange(planTrial);
+                    } else {
+                        planTrialTitle.style.display = 'none';
+                        planTrial.style.display = 'none';
+                        planTrial.textContent = '';
+                    }
+                }
+
+                // Description (specific per state)
+                if (noPlan) {
+                    planDescriptionElement.textContent = 'No current plan. Log in and purchase a plan to enable premium features.';
+                    planTitle.textContent = 'No current plan';
+                    planCycle.textContent = '';
+                    // Gray for no plan
+                    planTitle.style.color = '#9e9e9e';
+                    planTitle.style.textShadow = 'none';
+                } else if (isTrial) {
+                    planDescriptionElement.textContent = 'Free trial active.';
+                    // Dragon's breath orange for trial state
+                    planTitle.style.color = '#ff4500';
+                    planTitle.style.textShadow = '0 0 8px rgba(255,69,0,0.7), 0 0 16px rgba(255,69,0,0.4)';
+                } else if (planData.type === 'pro') {
+                    if (planData.billingCycle && planData.billingCycle !== null && planData.billingCycle !== 'null') {
+                        const cycleText = planData.billingCycle.toLowerCase().includes('year') ? 'Yearly billing' : 'Monthly billing';
+                        planDescriptionElement.textContent = `Pro plan active ? ${cycleText}.`;
+                    } else {
+                        planDescriptionElement.textContent = 'Pro plan active.';
+                    }
+                    // Dragon breath orange for plan title
+                    planTitle.style.color = '#ff4500';
+                    planTitle.style.textShadow = '0 0 8px rgba(255,69,0,0.7), 0 0 16px rgba(255,69,0,0.4)';
+                } else if (planData.type === 'ultimate') {
+                    if (planData.billingCycle && planData.billingCycle !== null && planData.billingCycle !== 'null') {
+                        const cycleText = planData.billingCycle.toLowerCase().includes('year') ? 'Yearly billing' : 'Monthly billing';
+                        planDescriptionElement.textContent = `Ultimate plan active ? ${cycleText}.`;
+                    } else {
+                        planDescriptionElement.textContent = 'Ultimate plan active.';
+                    }
+                    // Dragon breath orange for plan title
+                    planTitle.style.color = '#ff4500';
+                    planTitle.style.textShadow = '0 0 8px rgba(255,69,0,0.7), 0 0 16px rgba(255,69,0,0.4)';
+                } else if (planData.type === 'expired') {
+                    planDescriptionElement.textContent = 'Your trial has expired. Please upgrade to continue using Synk.';
+                    planTitle.style.color = '#f44336';
+                    planTitle.style.textShadow = 'none';
+                } else {
+                    planDescriptionElement.textContent = 'Plan status unknown.';
+                    planTitle.style.color = '#9e9e9e';
+                    planTitle.style.textShadow = 'none';
+                }
+
+                console.log('? Plan display updated:', titleText, { isTrial });
+            }
+        }
+
+        
+        // Start trial when both services are connected
+        async function startTrialIfEligible() {
+            try {
+                const result = await window.electronAPI.startTrial();
+                if (result.success) {
+                    console.log('? Trial started');
+                    updatePlanDisplay(result.plan);
+                    showSuccessToast('Your 14-day free trial has started!');
+                }
+            } catch (error) {
+                console.error('? Error starting trial:', error);
+            }
+        }
+        
+        // Check if user has access to a feature
+        async function checkFeatureAccess(feature) {
+            try {
+                const result = await window.electronAPI.checkFeatureAccess(feature);
+                return result.hasAccess;
+            } catch (error) {
+                console.error('? Error checking feature access:', error);
+                return false;
+            }
+        }
+        
+        // Show feature restriction message
+        function showFeatureRestriction(featureName) {
+            showErrorToast(`${featureName} is only available in Ultimate plan. Please upgrade to access this feature.`);
+        }
+        
+        // Success toast function
+        function showSuccessToast(message) {
+            const toast = document.createElement('div');
+            toast.style.cssText = `
+                position: fixed;
+                top: 20px;
+                right: 20px;
+                background: linear-gradient(135deg, #4CAF50, #45a049);
+                color: white;
+                padding: 15px 20px;
+                border-radius: 8px;
+                box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+                z-index: 10000;
+                font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+                font-size: 14px;
+                max-width: 300px;
+                animation: slideIn 0.3s ease-out;
+            `;
+            toast.textContent = message;
+            
+            document.body.appendChild(toast);
+            
+            setTimeout(() => {
+                toast.style.animation = 'slideOut 0.3s ease-in';
+                setTimeout(() => {
+                    if (toast.parentNode) {
+                        toast.parentNode.removeChild(toast);
+                    }
+                }, 300);
+            }, 3000);
+        }
+        
+        // Titlebar Controls
+        document.addEventListener('DOMContentLoaded', async () => {
+            // Load user plan information
+            await loadUserPlan();
+
+            // Update account UI state based on token
+            const tokenPresent = !!localStorage.getItem('auth_token');
+            const authOverlay = document.getElementById('auth-overlay');
+            const loggedInContainer = document.getElementById('logged-in-container');
+            const loggedInEmail = document.getElementById('logged-in-email');
+
+            if (tokenPresent) {
+                // Fetch email from /me for display
+                try {
+                    const base = (window.electronAPI && window.electronAPI.backendUrl) ? window.electronAPI.backendUrl : 'https://synk-web.onrender.com';
+                    const resp = await fetch(base + '/me', { headers: { 'Authorization': 'Bearer ' + localStorage.getItem('auth_token') } });
+                    const me = await resp.json().catch(() => ({}));
+                    console.log('[About Tab] /me response:', me);
+                    if (me && me.email && loggedInEmail) {
+                        loggedInEmail.textContent = me.email;
+                        console.log('[About Tab] Email set to:', me.email);
+                    } else {
+                        console.warn('[About Tab] Email not found in /me response');
+                    }
+                } catch (err) {
+                    console.error('[About Tab] Error fetching email:', err);
+                }
+
+                // Hide auth overlay (no transition needed on initial load)
+                if (authOverlay) {
+                    authOverlay.style.display = 'none';
+                    authOverlay.style.opacity = '0';
+                }
+                if (loggedInContainer) loggedInContainer.style.display = 'flex';
+                startPlanPolling();
+            } else {
+                // Show auth overlay with initial state (no animation on first load)
+                if (authOverlay) {
+                    authOverlay.style.display = 'flex';
+                    authOverlay.style.opacity = '1';
+                    const innerCard = authOverlay.querySelector('div');
+                    if (innerCard) innerCard.style.transform = 'scale(1)';
+                }
+                if (loggedInContainer) loggedInContainer.style.display = 'none';
+            }
+            
+            // Initially hide sync status panel (dashboard is default tab)
+            const syncStatusPanel = document.getElementById('sync-status-panel');
+            if (syncStatusPanel) {
+                syncStatusPanel.style.display = 'none';
+            }
+            
+
+            const minimizeBtn = document.getElementById('minimize-btn');
+            const maximizeBtn = document.getElementById('maximize-btn');
+            const closeBtn = document.getElementById('close-btn');
+
+            if (minimizeBtn) minimizeBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                if (window.electronAPI && window.electronAPI.minimize) window.electronAPI.minimize();
+            });
+            if (maximizeBtn) maximizeBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                if (window.electronAPI && window.electronAPI.maximize) window.electronAPI.maximize();
+            });
+            if (closeBtn) closeBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                if (window.electronAPI && window.electronAPI.close) window.electronAPI.close();
+            });
+
+            // Refresh Plan button
+            const refreshBtn = document.getElementById('refresh-plan-btn');
+            if (refreshBtn) {
+                refreshBtn.addEventListener('click', async () => {
+                    // Add loading animation to Refresh Plan button
+                    const originalHtml = refreshBtn.innerHTML;
+                    refreshBtn.disabled = true;
+                    refreshBtn.innerHTML = '<span class="spinner" style="display:inline-block;width:16px;height:16px;border:2px solid rgba(255,255,255,0.2);border-top-color:#fff;border-radius:50%;animation:spin 1s linear infinite;margin-right:8px;"></span>Refreshing...';
+                    try {
+                        // On refresh, require login first (token)
+                        const token = localStorage.getItem('auth_token');
+                        if (!token) {
+                            showErrorToast('Please log in first to refresh your plan.');
+                            return;
+                        }
+                        const base = (window.electronAPI && window.electronAPI.backendUrl) ? window.electronAPI.backendUrl : 'https://synk-web.onrender.com';
+                        const resp = await fetch(base + '/me', { headers: { 'Authorization': 'Bearer ' + token } });
+                        const data = await resp.json();
+                        if (data && data.success) {
+                            updatePlanDisplay({
+                                type: data.plan?.type || 'none',
+                                billingCycle: data.plan?.billingCycle || data.billing_period || null,
+                                description: data.plan?.description || undefined,
+                                is_trial: !!data.is_trial,
+                                trial_end: data.trial_end || null
+                            });
+                            showSuccessToast('Plan refreshed');
+                            return;
+                        }
+                        showErrorToast('Failed to refresh plan: ' + (data && data.error ? data.error : 'unknown error'));
+                    } catch (err) {
+                        showErrorToast('Refresh failed: ' + err.message);
+                    } finally {
+                        // Restore button state
+                        refreshBtn.disabled = false;
+                        refreshBtn.innerHTML = originalHtml;
+                    }
+                });
+            }
+
+            // Auth handlers
+            const loginBtn = document.getElementById('login-btn');
+            const authStatus = document.getElementById('auth-status');
+            const authEmailInput = document.getElementById('auth-email');
+            const authPasswordInput = document.getElementById('auth-password');
+            
+            function setAuthStatus(msg, ok = true) {
+                if (authStatus) {
+                    // Dragon's breath orange for any status unless it is an error
+                    authStatus.style.color = ok ? '#ff4500' : '#ef5350';
+                    authStatus.textContent = msg;
+                }
+            }
+
+            // Smooth auth overlay show/hide with transitions
+            function showAuthOverlay() {
+                const authOverlay = document.getElementById('auth-overlay');
+                if (authOverlay) {
+                    authOverlay.style.display = 'flex';
+                    // Trigger reflow to enable transition
+                    authOverlay.offsetHeight;
+                    authOverlay.style.opacity = '1';
+                    const innerCard = authOverlay.querySelector('div');
+                    if (innerCard) innerCard.style.transform = 'scale(1)';
+                }
+            }
+
+            function hideAuthOverlay() {
+                const authOverlay = document.getElementById('auth-overlay');
+                if (authOverlay) {
+                    authOverlay.style.opacity = '0';
+                    const innerCard = authOverlay.querySelector('div');
+                    if (innerCard) innerCard.style.transform = 'scale(0.95)';
+                    setTimeout(() => {
+                        authOverlay.style.display = 'none';
+                    }, 300); // Match transition duration
+                }
+            }
+
+            async function doLogin() {
+                const email = (authEmailInput||{}).value;
+                const password = (authPasswordInput||{}).value;
+                if (!email || !password) { 
+                    setAuthStatus('Email and password required', false); 
+                    return; 
+                }
+                const base = (window.electronAPI && window.electronAPI.backendUrl) ? window.electronAPI.backendUrl : 'https://synk-web.onrender.com';
+                try {
+                    // Dragons breath orange
+                    setAuthStatus('Logging in...', true);
+                    if (authStatus) authStatus.style.color = '#ff4500';
+                    
+                    const resp = await fetch(base + '/login', { 
+                        method: 'POST', 
+                        headers: { 'Content-Type': 'application/json' }, 
+                        body: JSON.stringify({ email, password }) 
+                    });
+                    const data = await resp.json().catch(() => ({ success: false, error: 'invalid_response' }));
+                    
+                    if (data && data.success && data.token) {
+                        localStorage.setItem('auth_token', data.token);
+                        setAuthStatus('Logged in successfully!', true);
+                        
+                        // Immediately fetch plan via /me
+                        const meResp = await fetch(base + '/me', { 
+                            headers: { 'Authorization': 'Bearer ' + data.token } 
+                        });
+                        const me = await meResp.json().catch(() => ({ success: false }));
+                        
+                        if (me && me.success) {
+                            updatePlanDisplay({
+                                type: me.plan?.type || 'none',
+                                billingCycle: me.plan?.billingCycle || me.billing_period || null,
+                                description: me.plan?.description || undefined,
+                                is_trial: !!me.is_trial,
+                                trial_end: me.trial_end || null
+                            });
+                            
+                            // Hide auth overlay with smooth transition
+                            hideAuthOverlay();
+                            
+                            // Show logged in container
+                            setTimeout(() => {
+                                document.getElementById('logged-in-container').style.display = 'flex';
+                                if (me.email) document.getElementById('logged-in-email').textContent = me.email;
+                            }, 150);
+                            
+                            startPlanPolling();
+                        }
+                    } else {
+                        setAuthStatus((data && data.error) ? data.error : 'Login failed', false);
+                    }
+                } catch (e) {
+                    setAuthStatus('Network error. Check connection and try again.', false);
+                }
+            }
+
+            // Login button click handler
+            if (loginBtn) {
+                loginBtn.addEventListener('click', doLogin);
+            }
+            
+            // Enter key support for login form
+            if (authEmailInput) {
+                authEmailInput.addEventListener('keypress', (e) => {
+                    if (e.key === 'Enter') doLogin();
+                });
+            }
+            if (authPasswordInput) {
+                authPasswordInput.addEventListener('keypress', (e) => {
+                    if (e.key === 'Enter') doLogin();
+                });
+            }
+
+            // Logout
+            const logoutBtn = document.getElementById('logout-btn');
+            if (logoutBtn) {
+                logoutBtn.addEventListener('click', async () => {
+                    // Clear token and stop polling
+                    localStorage.removeItem('auth_token');
+                    if (typeof __planPoller !== 'undefined' && __planPoller) { clearInterval(__planPoller); __planPoller = null; }
+                    
+                    // UI swap back with smooth transition
+                    document.getElementById('logged-in-container').style.display = 'none';
+                    showAuthOverlay();
+                    
+                    // Clear form fields
+                    if (authEmailInput) authEmailInput.value = '';
+                    if (authPasswordInput) authPasswordInput.value = '';
+                    setAuthStatus('');
+                    
+                    // Reset plan to no current plan (gray)
+                    updatePlanDisplay({ type: 'none' });
+                    showSuccessToast('Logged out');
+                });
+            }
+
+            // About page link handlers
+            document.getElementById('homepage-link').addEventListener('click', (e) => {
+                e.preventDefault();
+                window.electronAPI.openExternal('https://synk-official.com');
+            });
+
+            // Support email is handled by default mailto: behavior
+            
+            // Tab Navigation
+            document.querySelectorAll('.nav-item').forEach(item => {
+                item.addEventListener('click', () => {
+                    const tabId = item.dataset.tab;
+                    switchTab(tabId);
+                });
+            });
+            
+            // OAuth Connection Handler Functions
+            async function handleGoogleConnect() {
+                if (isGoogleConnecting) {
+                    console.log('[Renderer] Google OAuth already in progress');
+                    return;
+                }
+                
+                isGoogleConnecting = true;
+                const btn = document.getElementById('google-connect');
+                if (btn) {
+                    btn.disabled = true;
+                    btn.textContent = 'Connecting...';
+                }
+                
+                try {
+                    console.log('[Renderer] Starting Google OAuth...');
+                    await window.electronAPI.startGoogleOAuth();
+                } catch (error) {
+                    console.error('[Renderer] Google OAuth error:', error);
+                    isGoogleConnecting = false;
+                    if (btn) {
+                        btn.disabled = false;
+                        btn.textContent = 'Connect Google Calendar';
+                    }
+                    showErrorToast('Failed to start Google authentication');
+                }
+            }
+            
+            async function handleNotionConnect() {
+                if (isNotionConnecting) {
+                    console.log('[Renderer] Notion OAuth already in progress');
+                    return;
+                }
+                
+                isNotionConnecting = true;
+                const btn = document.getElementById('notion-connect');
+                if (btn) {
+                    btn.disabled = true;
+                    btn.textContent = 'Connecting...';
+                }
+                
+                showNotionOAuthStatus();
+                
+                try {
+                    console.log('[Renderer] Starting Notion OAuth...');
+                    await window.electronAPI.startNotionOAuth();
+                } catch (error) {
+                    console.error('[Renderer] Notion OAuth error:', error);
+                    isNotionConnecting = false;
+                    if (btn) {
+                        btn.disabled = false;
+                        btn.textContent = 'Connect Notion';
+                    }
+                    hideNotionOAuthStatus();
+                    showErrorToast('Failed to start Notion authentication');
+                }
+            }
+            
+            // OAuth Connection Handlers - MUST be inside DOMContentLoaded
+            document.getElementById('google-connect').addEventListener('click', handleGoogleConnect);
+            document.getElementById('notion-connect').addEventListener('click', handleNotionConnect);
+            
+            // ========================================
+            // REAL-TIME & BACKGROUND SYNC SYSTEM
+            // ========================================
+            // When app is OPEN: Real-time sync with incremental updates (only modified events)
+            // When app is CLOSED: Background sync runs on schedule (handled by main process)
+            
+            let realtimeSyncInterval = null;
+            let backgroundSyncInterval = null;
+            const REALTIME_SYNC_INTERVAL_MS = 2 * 60 * 1000; // 2 minutes for real-time when app is open
+            const BACKGROUND_SYNC_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes for background when app is closed
+            let lastSyncTimestamp = null;
+            let isAppVisible = true;
+            
+            // Track app visibility to switch between real-time and background sync
+            document.addEventListener('visibilitychange', async () => {
+                isAppVisible = !document.hidden;
+                console.log(`[Sync Manager] ??? App visibility changed: ${isAppVisible ? 'VISIBLE' : 'HIDDEN'}`);
+                
+                // Notify main process about visibility change
+                if (window.electronAPI && window.electronAPI.setAppVisibility) {
+                    try {
+                        await window.electronAPI.setAppVisibility(isAppVisible);
+                        console.log(`[Sync Manager] ?? Notified main process: app is ${isAppVisible ? 'VISIBLE' : 'HIDDEN'}`);
+                    } catch (error) {
+                        console.error('[Sync Manager] ? Failed to notify main process:', error);
+                    }
+                }
+                
+                // When app becomes visible, switch to real-time sync
+                if (isAppVisible) {
+                    const backgroundSyncToggle = document.getElementById('background-sync-toggle');
+                    if (backgroundSyncToggle && backgroundSyncToggle.checked) {
+                        stopBackgroundSync();
+                        startRealtimeSync();
+                    }
+                } else {
+                    // When app is hidden, switch to background sync
+                    const backgroundSyncToggle = document.getElementById('background-sync-toggle');
+                    if (backgroundSyncToggle && backgroundSyncToggle.checked) {
+                        stopRealtimeSync();
+                        startBackgroundSync();
+                    }
+                }
+            });
+            
+            // Real-time sync (when app is open) - only syncs modified events
+            function startRealtimeSync() {
+                if (realtimeSyncInterval) {
+                    console.log('[Real-time Sync] Already running, skipping start');
+                    return;
+                }
+                
+                console.log('[Real-time Sync] ? ENABLED - Checking for changes every 2 minutes');
+                console.log('[Real-time Sync] ?? Mode: INCREMENTAL (only modified events since last sync)');
+                
+                // Perform initial sync
+                performIncrementalSync();
+                
+                realtimeSyncInterval = setInterval(async () => {
+                    await performIncrementalSync();
+                }, REALTIME_SYNC_INTERVAL_MS);
+                
+                console.log('[Real-time Sync] ? Next check scheduled in 2 minutes');
+            }
+            
+            function stopRealtimeSync() {
+                if (realtimeSyncInterval) {
+                    clearInterval(realtimeSyncInterval);
+                    realtimeSyncInterval = null;
+                    console.log('[Real-time Sync] ? STOPPED - Switching to background mode');
+                } else {
+                    console.log('[Real-time Sync] Already stopped');
+                }
+            }
+            
+            // Background sync (when app is closed/minimized) - full sync on schedule
+            function startBackgroundSync() {
+                if (backgroundSyncInterval) {
+                    console.log('[Background Sync] Already running, skipping start');
+                    return;
+                }
+                
+                console.log('[Background Sync] ? ENABLED - Running full sync every 5 minutes');
+                console.log('[Background Sync] ?? Mode: SCHEDULED (for when app is closed/minimized)');
+                
+                backgroundSyncInterval = setInterval(async () => {
+                    await performFullSync();
+                }, BACKGROUND_SYNC_INTERVAL_MS);
+                
+                console.log('[Background Sync] ? Next sync scheduled in 5 minutes');
+            }
+            
+            function stopBackgroundSync() {
+                if (backgroundSyncInterval) {
+                    clearInterval(backgroundSyncInterval);
+                    backgroundSyncInterval = null;
+                    console.log('[Background Sync] ? DISABLED - Automatic sync stopped');
+                } else {
+                    console.log('[Background Sync] Already stopped');
+                }
+            }
+            
+            // Incremental sync - only syncs events modified since last sync
+            async function performIncrementalSync() {
+                try {
+                    console.log('[Real-time Sync] ?? Checking for changes...');
+                    
+                    // Check if user is connected to both services
+                    if (!isGoogleConnected || !isNotionConnected) {
+                        console.log('[Real-time Sync] ?? Skipping - not connected to both services', {
+                            google: isGoogleConnected,
+                            notion: isNotionConnected
+                        });
+                        return;
+                    }
+                    
+                    // Get selected calendars and databases
+                    const selectedCalendars = Array.from(document.querySelectorAll('.calendar-item input[type="checkbox"]:checked'))
+                        .map(cb => cb.value);
+                    const selectedDatabases = Array.from(document.querySelectorAll('.database-item input[type="checkbox"]:checked'))
+                        .map(cb => cb.value);
+                    
+                    if (selectedCalendars.length === 0 || selectedDatabases.length === 0) {
+                        console.log('[Real-time Sync] ?? Skipping - no calendars or databases selected', {
+                            calendars: selectedCalendars.length,
+                            databases: selectedDatabases.length
+                        });
+                        return;
+                    }
+                    
+                    // Get last sync timestamp
+                    const lastSync = lastSyncTimestamp || localStorage.getItem('last-sync-timestamp');
+                    const timeSinceLastSync = lastSync ? Math.round((Date.now() - new Date(lastSync).getTime()) / 1000) : null;
+                    
+                    console.log('[Real-time Sync] ?? Incremental sync:', {
+                        calendars: selectedCalendars.length,
+                        databases: selectedDatabases.length,
+                        lastSync: lastSync ? new Date(lastSync).toLocaleString() : 'Never',
+                        timeSinceLastSync: timeSinceLastSync ? `${timeSinceLastSync}s ago` : 'N/A'
+                    });
+                    
+                    // Perform incremental sync via Electron API
+                    if (window.electronAPI && window.electronAPI.forceSync) {
+                        const result = await window.electronAPI.forceSync();
+                        
+                        if (result.success) {
+                            // Update last sync timestamp
+                            lastSyncTimestamp = new Date().toISOString();
+                            localStorage.setItem('last-sync-timestamp', lastSyncTimestamp);
+                            
+                            console.log('[Real-time Sync] ? Incremental sync completed', {
+                                timestamp: new Date(lastSyncTimestamp).toLocaleString()
+                            });
+                            
+                            // Update UI if sync stats are available
+                            if (window.electronAPI.getSyncStats) {
+                                const stats = await window.electronAPI.getSyncStats();
+                                updateSyncStatsUI(stats);
+                            }
+                        } else {
+                            console.error('[Real-time Sync] ? Sync failed:', result.error);
+                        }
+                    } else {
+                        console.log('[Real-time Sync] ?? Sync API not available (running in browser mode)');
+                    }
+                    
+                } catch (error) {
+                    console.error('[Real-time Sync] ? ERROR during incremental sync:', error);
+                }
+            }
+            
+            // Full sync - syncs all events (used when app is closed/minimized)
+            async function performFullSync() {
+                try {
+                    console.log('[Background Sync] ?? Running full sync...');
+                    
+                    // Check if user is connected to both services
+                    if (!isGoogleConnected || !isNotionConnected) {
+                        console.log('[Background Sync] ?? Skipping - not connected to both services', {
+                            google: isGoogleConnected,
+                            notion: isNotionConnected
+                        });
+                        return;
+                    }
+                    
+                    // Get selected calendars and databases
+                    const selectedCalendars = Array.from(document.querySelectorAll('.calendar-item input[type="checkbox"]:checked'))
+                        .map(cb => cb.value);
+                    const selectedDatabases = Array.from(document.querySelectorAll('.database-item input[type="checkbox"]:checked'))
+                        .map(cb => cb.value);
+                    
+                    if (selectedCalendars.length === 0 || selectedDatabases.length === 0) {
+                        console.log('[Background Sync] ?? Skipping - no calendars or databases selected', {
+                            calendars: selectedCalendars.length,
+                            databases: selectedDatabases.length
+                        });
+                        return;
+                    }
+                    
+                    console.log('[Background Sync] ?? Full sync:', {
+                        calendars: selectedCalendars.length,
+                        databases: selectedDatabases.length
+                    });
+                    
+                    // Perform full sync via Electron API
+                    if (window.electronAPI && window.electronAPI.forceSync) {
+                        const result = await window.electronAPI.forceSync();
+                        
+                        if (result.success) {
+                            // Update last sync timestamp
+                            lastSyncTimestamp = new Date().toISOString();
+                            localStorage.setItem('last-sync-timestamp', lastSyncTimestamp);
+                            
+                            console.log('[Background Sync] ? Full sync completed', {
+                                timestamp: new Date(lastSyncTimestamp).toLocaleString()
+                            });
+                            
+                            // Update UI if sync stats are available
+                            if (window.electronAPI.getSyncStats) {
+                                const stats = await window.electronAPI.getSyncStats();
+                                updateSyncStatsUI(stats);
+                            }
+                        } else {
+                            console.error('[Background Sync] ? Sync failed:', result.error);
+                        }
+                    } else {
+                        console.log('[Background Sync] ?? Sync API not available (running in browser mode)');
+                    }
+                    
+                } catch (error) {
+                    console.error('[Background Sync] ? ERROR during full sync:', error);
+                }
+            }
+            
+            // Update sync stats in UI
+            function updateSyncStatsUI(stats) {
+                try {
+                    const lastSyncElement = document.getElementById('last-sync');
+                    const syncCountElement = document.getElementById('sync-count');
+                    
+                    if (lastSyncElement && lastSyncTimestamp) {
+                        const date = new Date(lastSyncTimestamp);
+                        const timeStr = date.toLocaleTimeString();
+                        lastSyncElement.textContent = `Last synced at ${timeStr}`;
+                    }
+                    
+                    if (syncCountElement && stats && stats.totalSyncs) {
+                        syncCountElement.textContent = `${stats.totalSyncs} syncs completed`;
+                    }
+                } catch (error) {
+                    console.error('[Sync Manager] ? Error updating UI:', error);
+                }
+            }
+            
+            // Background Sync Toggle Handler
+            const backgroundSyncToggle = document.getElementById('background-sync-toggle');
+            if (backgroundSyncToggle) {
+                // Load saved state from localStorage
+                const savedState = localStorage.getItem('background-sync-enabled');
+                const isEnabled = savedState === null ? true : savedState === 'true'; // Default to enabled
+                backgroundSyncToggle.checked = isEnabled;
+                
+                console.log('[Sync Manager] ?? Initial state:', isEnabled ? 'ENABLED' : 'DISABLED');
+                console.log('[Sync Manager] ??? App is currently:', isAppVisible ? 'VISIBLE' : 'HIDDEN');
+                
+                // Start appropriate sync mode based on app visibility
+                if (isEnabled) {
+                    if (isAppVisible) {
+                        startRealtimeSync();
+                    } else {
+                        startBackgroundSync();
+                    }
+                }
+                
+                // Toggle event listener
+                backgroundSyncToggle.addEventListener('change', (e) => {
+                    const enabled = e.target.checked;
+                    
+                    console.log('[Sync Manager] ?? Toggle changed:', enabled ? 'ENABLED' : 'DISABLED');
+                    
+                    // Save state to localStorage
+                    localStorage.setItem('background-sync-enabled', enabled.toString());
+                    
+                    if (enabled) {
+                        // Start appropriate sync mode based on app visibility
+                        if (isAppVisible) {
+                            startRealtimeSync();
+                            showSuccessToast('Real-time sync enabled');
+                        } else {
+                            startBackgroundSync();
+                            showSuccessToast('Background sync enabled');
+                        }
+                    } else {
+                        // Stop both sync modes
+                        stopRealtimeSync();
+                        stopBackgroundSync();
+                        showSuccessToast('Sync disabled');
+                    }
+                });
+            } else {
+                console.error('[Sync Manager] ? ERROR: Toggle element not found');
+            }
+        });
+
+        // UI State Management
+        let isGoogleConnecting = false;
+        let isNotionConnecting = false;
+        let isGoogleConnected = false;
+        let isNotionConnected = false;
+        let currentTab = 'dashboard';
+        
+        // Production mode only - no demo mode detection needed
+        
+        // Notion OAuth Status Helper Functions
+        function showNotionOAuthStatus() {
+            // Optional: Add visual feedback for Notion OAuth in progress
+            console.log('[Renderer] Notion OAuth status: Connecting...');
+        }
+        
+        function hideNotionOAuthStatus() {
+            // Optional: Hide visual feedback for Notion OAuth
+            console.log('[Renderer] Notion OAuth status: Hidden');
+        }
+
+        function switchTab(tabId) {
+            // Update navigation
+            document.querySelectorAll('.nav-item').forEach(nav => nav.classList.remove('active'));
+            document.querySelector(`[data-tab="${tabId}"]`).classList.add('active');
+
+            // Update content
+            document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
+            document.getElementById(`${tabId}-tab`).classList.add('active');
+
+            // Show/hide sync status panel only on sync tab
+            const syncStatusPanel = document.getElementById('sync-status-panel');
+            if (syncStatusPanel) {
+                if (tabId === 'sync') {
+                    syncStatusPanel.style.display = 'block';
+                } else {
+                    syncStatusPanel.style.display = 'none';
+                }
+            }
+
+            // Update header title
+            const titles = {
+                dashboard: 'Dashboard',
+                sync: 'Sync',
+                settings: 'Settings',
+                logs: 'Activity Logs',
+                about: 'About'
+            };
+            document.getElementById('header-title').textContent = titles[tabId];
+            currentTab = tabId;
+        }
+
+        // Update UI Management
+        (function initUpdateUI(){
+            const checkBtn = document.getElementById('check-updates');
+            const status = document.getElementById('update-status');
+            const msg = document.getElementById('update-message');
+            const prompt = document.getElementById('pref-prompt');
+            const auto = document.getElementById('pref-auto');
+            const manual = document.getElementById('pref-manual');
+
+            function showMessage(html, type){
+                if (!status || !msg) return;
+                msg.innerHTML = html;
+                status.style.display = 'block';
+                status.className = `update-${type}`;
+            }
+
+            if (checkBtn) {
+                checkBtn.addEventListener('click', () => {
+                    window.electronAPI.checkForUpdates();
+                    showMessage('Checking for updates...', 'info');
+                });
+            }
+
+            // set initial preference
+            if (window.electronAPI.getUpdatePreference) {
+                window.electronAPI.getUpdatePreference().then(pref => {
+                    if (pref === 'auto' && auto) auto.checked = true;
+                    else if (pref === 'manual' && manual) manual.checked = true;
+                    else if (prompt) prompt.checked = true;
+                });
+            }
+
+            // handle preference changes
+            [prompt, auto, manual].forEach(input => {
+                if (!input) return;
+                input.addEventListener('change', () => {
+                    if (input.checked) window.electronAPI.setUpdatePreference(input.value);
+                });
+            });
+
+            // listeners from main
+            if (window.electronAPI.onUpdateAvailable) {
+                window.electronAPI.onUpdateAvailable((_e, info) => {
+                    showMessage(`Version ${info.version} available!\n\nDownloading update automatically...`, 'info');
+                });
+            }
+            if (window.electronAPI.onDownloadProgress) {
+                window.electronAPI.onDownloadProgress((_e, p) => {
+                    const pct = (p && p.percent) ? p.percent.toFixed(0) : '';
+                    showMessage(`Downloading update... ${pct}%`, 'info');
+                });
+            }
+            if (window.electronAPI.onUpdateDownloaded) {
+                window.electronAPI.onUpdateDownloaded((_e, info) => {
+                    showMessage(`Update ready to install!\n\nRestart Synk to apply version ${info.version}`, 'success');
+                });
+            }
+
+            // what's new
+            (async function loadLog(){
+                try {
+                    const resp = await fetch('update-log.json');
+                    const data = await resp.json();
+                    const container = document.getElementById('update-entries');
+                    if (!container || !Array.isArray(data.updates)) return;
+                    container.innerHTML = data.updates.map(u => `
+                        <div style="background:#0f0f0f; border:1px solid #333; border-radius:10px; padding:12px;">
+                            <div style="display:flex; justify-content:space-between; margin-bottom:6px;">
+                                <strong>v${u.version}</strong>
+                                <span style="color:#888;">${u.date || ''}</span>
+                            </div>
+                            ${u.features && u.features.length ? `<div style='margin-top:6px;'><em>New Features:</em><br>${u.features.map(f=>`? ${f}`).join('<br>')}</div>`: ''}
+                            ${u.improvements && u.improvements.length ? `<div style='margin-top:6px;'><em>Improvements:</em><br>${u.improvements.map(f=>`? ${f}`).join('<br>')}</div>`: ''}
+                            ${u.fixes && u.fixes.length ? `<div style='margin-top:6px;'><em>Fixes:</em><br>${u.fixes.map(f=>`? ${f}`).join('<br>')}</div>`: ''}
+                        </div>
+                    `).join('');
+                } catch {}
+            })();
+        })();
+        
+        // New Refresh Button Handler
+        document.getElementById('refresh-sync-btn').addEventListener('click', async () => {
+            const btn = document.getElementById('refresh-sync-btn');
+            
+            // SAVE current selections BEFORE refresh
+            const savedSelection = { google: selected.google, notion: selected.notion };
+            
+            try {
+                btn.disabled = true;
+                btn.classList.add('spinning');
+                
+                // Refresh Google calendars if connected
+                if (isGoogleConnected) {
+                    console.log('Refreshing Google calendars...');
+                    const gcRes = await window.electronAPI.listGoogleCalendars();
+                    const calendars = (gcRes && (gcRes.calendars ?? gcRes)) || [];
+                    if ((Array.isArray(calendars) && calendars.length > 0) || calendars?.allCalendars?.length > 0 || calendars?.items?.length > 0 || calendars?.myCalendars?.length > 0) {
+                        renderGoogleCalendars(calendars);
+                        // RESTORE selection after rendering
+                        if (savedSelection.google) {
+                            selected.google = savedSelection.google;
+                            console.log('✅ Restored Google selection:', savedSelection.google);
+                        }
+                    }
+                }
+                
+                // Refresh Notion databases if connected
+                if (isNotionConnected) {
+                    console.log('Refreshing Notion databases...');
+                    const dbRes = await window.electronAPI.listDatabases();
+                    const databases = (dbRes && (dbRes.databases ?? dbRes)) || [];
+                    if (Array.isArray(databases) && databases.length > 0) {
+                        renderNotionDatabases(databases);
+                        // RESTORE selection after rendering
+                        if (savedSelection.notion) {
+                            selected.notion = savedSelection.notion;
+                            console.log('✅ Restored Notion selection:', savedSelection.notion);
+                        }
+                    }
+                }
+                
+                // RE-APPLY selection UI highlighting after both renders are done
+                renderSelectionUI();
+                
+                // Force immediate sync if both are connected and selections made
+                if (isGoogleConnected && isNotionConnected && selected.google && selected.notion) {
+                    console.log('Forcing immediate sync...');
+                    updateSyncStatus('Syncing...');
+                    
+                    const result = await window.electronAPI.forceSync();
+                    if (result.success) {
+                        updateSyncStatus('Sync completed successfully');
+                        // Start automatic sync for real-time updates
+                        await window.electronAPI.startSync([{ notion: selected.notion, google: selected.google }]);
+                    } else {
+                        updateSyncStatus('Sync failed: ' + (result.error || 'Unknown error'));
+                    }
+                } else {
+                    updateSyncStatus('Please select both a calendar and database first');
+                }
+                
+                setTimeout(() => {
+                    btn.disabled = false;
+                    btn.classList.remove('spinning');
+                }, 1000);
+                
+            } catch (error) {
+                console.error('Refresh failed:', error);
+                updateSyncStatus('Refresh failed: ' + error.message);
+                btn.disabled = false;
+                btn.classList.remove('spinning');
+            }
+        });
+
+        // Status Update Functions
+        function updateGoogleStatus(type, message) {
+            const status = document.getElementById('google-status');
+            if (status) {
+                status.className = `status ${type}`;
+                status.textContent = message;
+            }
+        }
+
+        function updateNotionStatus(type, message) {
+            const status = document.getElementById('notion-status');
+            if (status) {
+                status.className = `status ${type}`;
+                status.textContent = message;
+            }
+        }
+
+        function updateConnectionPill(service, connected) {
+            const pill = document.getElementById(`${service}-pill`);
+            const dot = document.getElementById(`${service}-status-dot`);
+            const text = document.getElementById(`${service}-status-text`);
+            
+            // Apply pill classes even if dot/text elements are missing
+            if (!pill) {
+                console.warn(`[UI] Connection pill element missing for ${service}`);
+                return;
+            }
+            
+            if (connected) {
+                pill.classList.remove('disconnected');
+                pill.classList.add('connected');
+                if (dot) {
+                    dot.classList.remove('disconnected');
+                    dot.classList.add('connected');
+                }
+                if (text) {
+                    text.textContent = 'Connected';
+                }
+            } else {
+                pill.classList.remove('connected');
+                pill.classList.add('disconnected');
+                if (dot) {
+                    dot.classList.remove('connected');
+                    dot.classList.add('disconnected');
+                }
+                if (text) {
+                    text.textContent = 'Not connected';
+                }
+            }
+        }
+
+        // Display Functions
+        function displayCalendars(calendarData) {
+            console.log('[Frontend] Received calendars:', calendarData);
+            const container = document.getElementById('calendars-content');
+            
+            // Flatten all calendars into a single list (like Notion databases)
+            let allCalendars = [];
+            
+            if (Array.isArray(calendarData)) {
+                // Old format - already an array
+                allCalendars = calendarData;
+            } else if (calendarData) {
+                // New format - combine myCalendars and otherCalendars
+                const myCalendars = calendarData.myCalendars || [];
+                const otherCalendars = calendarData.otherCalendars || [];
+                allCalendars = [...myCalendars, ...otherCalendars];
+            }
+            
+            if (!allCalendars || allCalendars.length === 0) {
+                container.innerHTML = '<div class="empty-state"><h3>No calendars found</h3><p>No calendars available in your account</p></div>';
+                return;
+            }
+
+            // Simple list format like Notion databases
+            container.innerHTML = allCalendars.map(cal => `
+                <button class="sync-item calendar-item ${cal.primary ? 'primary' : ''}" data-id="${cal.id}" onclick="toggleSelect('${cal.id}', 'google')" aria-label="Select ${cal.name} calendar">
+                    <div class="item-title">${cal.name}</div>
+                    <div class="item-meta">${cal.primary ? 'Primary Calendar ? ' : ''}${cal.accessRole} ? ${cal.timeZone || 'No timezone'}</div>
+                </button>
+            `).join('');
+        }
+
+        // Alias for backward compatibility
+        function renderGoogleCalendars(calendars) {
+            displayCalendars(calendars);
+        }
+
+        function renderNotionDatabases(databases) {
+            displayDatabases(databases);
+        }
+
+        function displayDatabases(databases) {
+            console.log('[Frontend] Received databases:', databases);
+            const container = document.getElementById('notion-content');
+            if (!databases || databases.length === 0) {
+                container.innerHTML = '<div class="empty-state"><h3>No databases found</h3><p>No databases available in your workspace</p></div>';
+                return;
+            }
+
+            container.innerHTML = databases.map(db => `
+                <button class="sync-item database-item" data-id="${db.id}" onclick="toggleSelect('${db.id}', 'notion')" aria-label="Select ${db.title} database">
+                    <div class="item-title">
+                        ${db.title}
+                    </div>
+                    <div class="item-meta">
+                        ${db.dateProperties && db.dateProperties.length > 0 ? 
+                          `Date fields: ${db.dateProperties.join(', ')}` : 
+                          `Properties: ${db.properties ? db.properties.join(', ') : 'None'}`} • ${db.last_edited_time ? new Date(db.last_edited_time).toLocaleDateString() : 'Unknown date'}
+                    </div>
+                </button>
+            `).join('');
+        }
+
+        // Settings Handlers
+
+        document.getElementById('clear-data-btn').addEventListener('click', async () => {
+            if (confirm('Are you sure you want to clear all data? This will disconnect all services.')) {
+                try {
+                    await window.electronAPI.clearAllData();
+                    // Reset UI
+                    updateConnectionPill('google', false);
+                    updateConnectionPill('notion', false);
+                    // Guard legacy status elements (they may not exist)
+                    const googleStatusEl = document.getElementById('google-status');
+                    if (googleStatusEl) googleStatusEl.textContent = '';
+                    const notionStatusEl = document.getElementById('notion-status');
+                    if (notionStatusEl) notionStatusEl.textContent = '';
+                    document.getElementById('calendars-content').innerHTML = '<div class="empty-state"><h3>Connect Google to get started</h3><p>Your calendars will appear here</p></div>';
+                    document.getElementById('notion-content').innerHTML = '<div class="empty-state"><h3>Connect Notion to get started</h3><p>Your databases and pages will appear here</p></div>';
+                } catch (error) {
+                    console.error('Failed to clear data:', error);
+                }
+            }
+        });
+
+        // Sync Selection State - Fix #4 implementation
+        const selected = { notion: null, google: null };
+        let autoSyncTimer = null;
+
+        function toggleSelect(id, type) {
+            // toggle selection; for this app we want exactly one selected per side:
+            selected[type] = selected[type] === id ? null : id;
+            renderSelectionUI();
+            checkAndTriggerAutoSync();
+        }
+
+        function renderSelectionUI() {
+            // Update Google calendar selection UI
+            document.querySelectorAll('.calendar-item').forEach(item => {
+                if (item.dataset.id === selected.google) {
+                    item.classList.add('selected');
+                } else {
+                    item.classList.remove('selected');
+                }
+            });
+
+            // Update Notion database selection UI
+            document.querySelectorAll('.database-item').forEach(item => {
+                if (item.dataset.id === selected.notion) {
+                    item.classList.add('selected');
+                } else {
+                    item.classList.remove('selected');
+                }
+            });
+
+            // Update inline sync status
+            updateSyncStatus();
+        }
+
+        function checkAndTriggerAutoSync() {
+            if (selected.notion && selected.google) {
+                // Start trial only when user purchases a plan with a trial (not on first sync)
+                // startTrialIfEligible();
+                
+                clearTimeout(autoSyncTimer);
+                autoSyncTimer = setTimeout(async () => {
+                    try {
+                        // call IPC: sync now
+                        updateSyncStatus('Syncing...');
+                        const result = await window.electronAPI.startSync([{ notion: selected.notion, google: selected.google }]);
+                        
+                        if (result && result.success) {
+                            // Wait a moment for sync to complete, then update status
+                            setTimeout(async () => {
+                                await updateSyncStats();
+                                const now = new Date();
+                                const timeStr = now.toLocaleTimeString('en-US', { hour12: true, hour: 'numeric', minute: '2-digit' });
+                                updateSyncStatus(`Last synced at ${timeStr}`);
+                            }, 2000);
+                        } else {
+                            updateSyncStatus('Sync failed - will retry automatically');
+                        }
+                    } catch (error) {
+                        console.error('Sync error:', error);
+                        updateSyncStatus('Sync failed - will retry automatically');
+                    }
+                }, 1200);
+            }
+        }
+
+        function updateSyncStatus(status) {
+            const syncStatusText = document.getElementById('sync-status-text');
+            const syncDot = document.getElementById('sync-dot');
+            const syncDetails = document.getElementById('sync-details');
+            const syncSource = document.getElementById('sync-source');
+            const syncTarget = document.getElementById('sync-target');
+            const lastSync = document.getElementById('last-sync');
+            const syncCount = document.getElementById('sync-count');
+            
+            if (!syncStatusText || !syncDot) return;
+            
+            if (status) {
+                // Manual status update (e.g., "Syncing...", "Last synced at 14:30")
+                syncStatusText.textContent = status;
+                
+                if (status.includes('Syncing')) {
+                    syncDot.className = 'sync-dot syncing';
+                } else if (status.includes('failed') || status.includes('error')) {
+                    syncDot.className = 'sync-dot error';
+                } else if (status.includes('synced at')) {
+                    syncDot.className = 'sync-dot ready';
+                } else {
+                    syncDot.className = 'sync-dot ready';
+                }
+            } else {
+                // Show current selection status
+                const hasNotionSelection = selected.notion !== null;
+                const hasGoogleSelection = selected.google !== null;
+                
+                if (hasNotionSelection && hasGoogleSelection) {
+                    syncStatusText.textContent = 'Ready to sync - Auto-sync enabled';
+                    syncDot.className = 'sync-dot ready';
+                    
+                    // Show sync details
+                    syncDetails.style.display = 'block';
+                    syncSource.textContent = selected.notion.title || 'Notion Database';
+                    syncTarget.textContent = selected.google.name || 'Google Calendar';
+                    
+                    // Update sync stats from backend
+                    updateSyncStats();
+                    
+                } else if (hasNotionSelection || hasGoogleSelection) {
+                    syncStatusText.textContent = 'Select one item from each side to sync';
+                    syncDot.className = 'sync-dot idle';
+                    syncDetails.style.display = 'none';
+                } else {
+                    syncStatusText.textContent = 'Select one Notion database and one Google calendar to sync';
+                    syncDot.className = 'sync-dot idle';
+                    syncDetails.style.display = 'none';
+                }
+            }
+        }
+
+        async function updateSyncStats() {
+            try {
+                const res = await window.electronAPI.getSyncStats();
+                const stats = res && (res.stats || res);
+                const lastSync = document.getElementById('last-sync');
+                const syncCount = document.getElementById('sync-count');
+                
+                if (lastSync && syncCount) {
+                    // Update last sync time
+                    if (stats && stats.lastSyncTimes && Object.keys(stats.lastSyncTimes).length > 0) {
+                        const lastSyncTime = Object.values(stats.lastSyncTimes)[0];
+                        const date = new Date(lastSyncTime);
+                        const timeStr = date.toLocaleTimeString('en-US', { hour12: true, hour: 'numeric', minute: '2-digit' });
+                        lastSync.textContent = `Last synced at ${timeStr}`;
+                    } else {
+                        lastSync.textContent = 'Never synced';
+                    }
+                    
+                    // Update sync count
+                    const count = (stats && (stats.successfulSyncs || stats.syncStats?.successfulSyncs)) || 0;
+                    syncCount.textContent = `${count} syncs`;
+                }
+            } catch (error) {
+                console.error('Error fetching sync stats:', error);
+            }
+        }
+
+        // Hide properties panel by default as specified in Fix #4
+        const propertiesPanel = document.getElementById('properties-panel');
+        if (propertiesPanel) {
+            propertiesPanel.style.display = 'none';
+        }
+
+        // Error toast functions
+        function showErrorToast(message) {
+            const toast = document.getElementById('error-toast');
+            const messageSpan = document.getElementById('error-message');
+            if (toast && messageSpan) {
+                messageSpan.textContent = message;
+                toast.style.display = 'block';
+                // Auto-hide after 5 seconds
+                setTimeout(() => hideErrorToast(), 5000);
+            }
+        }
+
+        function hideErrorToast() {
+            const toast = document.getElementById('error-toast');
+            if (toast) {
+                toast.style.display = 'none';
+            }
+        }
+
+        function showSuccessToast(message) {
+            console.log('[Success]', message);
+            // For now, just log to console. You can add a success toast UI later if needed.
+        }
+
+        async function fetchNotionDatabases() {
+            try {
+                console.log('[Frontend] Fetching Notion databases...');
+                const result = await window.electronAPI.getDatabases();
+                console.log('[Frontend] Raw result from getDatabases:', result);
+                
+                // Handle the result structure - it might be an array or an object with databases property
+                let databases;
+                if (Array.isArray(result)) {
+                    databases = result;
+                } else if (result && result.databases) {
+                    databases = result.databases;
+                } else {
+                    databases = [];
+                }
+                
+                console.log('[Frontend] Processed databases:', databases);
+                displayDatabases(databases);
+            } catch (error) {
+                console.error('[Frontend] Error fetching Notion databases:', error);
+                // updateNotionStatus('error', 'Failed to fetch databases'); // Removed status div
+            }
+        }
+
+        // Production mode only - no sample data needed
+
+        // Event listeners for OAuth success and demo timeout
+        if (window.electronAPI) {
+            // OAuth success handler - hide connect button
+            window.electronAPI.onOAuthSuccess((event, payload) => {
+                // Ignore invalid/empty payloads to prevent crashes
+                if (!payload || typeof payload !== 'object') {
+                    console.warn('OAuth success received with invalid payload, ignoring:', payload);
+                    return;
+                }
+                console.log('OAuth success received:', payload);
+                console.log('Payload details:', {
+                    provider: payload.provider,
+                    account: payload.account,
+                    calendars: payload.calendars?.allCalendars?.length || payload.calendars?.length || 0,
+                    databases: payload.databases?.length || 0
+                });
+                
+                // Update connection state and hide button
+                if (payload.provider === 'notion') {
+                    isNotionConnected = true;
+                    isNotionConnecting = false;
+                    const btn = document.getElementById('notion-connect');
+                    if (btn) {
+                        btn.style.display = 'none'; // Hide button
+                        console.log('? Notion connect button hidden');
+                    }
+                    updateConnectionPill('notion', true);
+                    if (payload.databases) {
+                        displayDatabases(payload.databases);
+                    }
+                } else if (payload.provider === 'google') {
+                    isGoogleConnected = true;
+                    isGoogleConnecting = false;
+                    const btn = document.getElementById('google-connect');
+                    if (btn) {
+                        btn.style.display = 'none';
+                    }
+                    updateConnectionPill('google', true);
+                    if (payload.calendars && (payload.calendars.allCalendars?.length > 0 || payload.calendars.length > 0)) {
+                        console.log('Displaying calendars:', payload.calendars);
+                        displayCalendars(payload.calendars);
+                    } else {
+                        console.log('Warning: No calendars received in payload');
+                    }
+                }
+            });
+
+            // Google calendars handler - receives calendars directly from OAuth server
+            window.electronAPI.onGoogleCalendars((event, calendars) => {
+                console.log('Google calendars received:', calendars);
+                console.log('Calendar details:', {
+                    myCalendars: calendars.myCalendars?.length || 0,
+                    otherCalendars: calendars.otherCalendars?.length || 0,
+                    allCalendars: calendars.allCalendars?.length || 0,
+                    items: calendars.items?.length || 0,
+                    kind: calendars.kind
+                });
+                
+                // Update Google connection state
+                isGoogleConnected = true;
+                isGoogleConnecting = false;
+                
+                // Hide connect button
+                const btn = document.getElementById('google-connect');
+                if (btn) {
+                    btn.style.display = 'none';
+                }
+                
+                // Update status and display calendars
+                
+                if (calendars && (calendars.allCalendars?.length > 0 || calendars.items?.length > 0)) {
+                    console.log('Displaying calendars:', calendars);
+                    displayCalendars(calendars);
+                } else {
+                    console.log('Warning: No calendar items found');
+                    updateGoogleStatus('warning', 'Connected but no calendars found');
+                }
+                
+
+                
+                // Show success toast
+                const totalCount = calendars.allCalendars?.length || calendars.items?.length || 0;
+                showSuccessToast(`Connected to Google Calendar! Found ${totalCount} calendars.`);
+            });
+
+
+
+            // FIXED OAuth failure handler - stops spinner, resets button
+            if (window.electronAPI.onOAuthFailed) {
+                window.electronAPI.onOAuthFailed((event, error) => {
+                    console.error('? OAuth failed:', error);
+                    
+                    // Stop infinite loading immediately
+                    isGoogleConnecting = false;
+                    isGoogleConnected = false;
+                    
+                    // Show connect button again
+                    const btn = document.getElementById('google-connect');
+                    if (btn) {
+                        btn.style.display = 'block';
+                        btn.textContent = 'Connect Google';
+                        btn.disabled = false;
+                    }
+                    
+                    updateGoogleStatus('error', 'Connection failed');
+                    showErrorToast(`Google connection failed: ${error}`);
+                });
+            }
+
+            // Google OAuth success handler - receives calendars array directly
+            console.log("[Renderer] ?? Setting up event listeners...");
+            console.log("[Renderer] ?? window.electronAPI.on available:", !!window.electronAPI.on);
+            if (window.electronAPI.on) {
+                console.log("[Renderer] ?? Inside electronAPI.on block");
+                window.electronAPI.on('google-oauth-success', (event, calendars) => {
+                    console.log("[Renderer] Calendars received:", calendars);
+                    
+                    // Stop loading state
+                    isGoogleConnected = true;
+                    isGoogleConnecting = false;
+                    
+                    // Hide connect button
+                    const btn = document.getElementById('google-connect');
+                    if (btn) {
+                        btn.style.display = 'none';
+                        btn.disabled = false;
+                        btn.textContent = 'Connect Google';
+                    }
+                    
+                    // Update status and display calendars
+                    // updateGoogleStatus('success', 'Connected to Google Calendar'); // Removed status div
+                    updateConnectionPill('google', true);
+                    
+                    if (calendars && (calendars.allCalendars?.length > 0 || calendars.length > 0)) {
+                        console.log('Displaying calendars:', calendars);
+                        displayCalendars(calendars);
+        
+                        const totalCount = calendars.allCalendars?.length || calendars.length || 0;
+                        showSuccessToast(`Connected to Google Calendar! Found ${totalCount} calendars.`);
+                    } else {
+                        console.log('Warning: No calendars found');
+                        // updateGoogleStatus('warning', 'Connected but no calendars found'); // Removed status div
+                    }
+                });
+
+                // Notion OAuth success handler
+                console.log("[Renderer] Registering notion-oauth-success event listener...");
+            }
+        }
+    </script>
+
+    <!-- Load tab content from separate HTML files -->
+    <script src="./js/tabs-loader.js"></script>
+</body>
+</html>
