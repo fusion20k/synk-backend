@@ -15,6 +15,8 @@ app.disableHardwareAcceleration();
 app.commandLine.appendSwitch('disable-gpu-sandbox');
 app.commandLine.appendSwitch('no-sandbox');
 app.commandLine.appendSwitch('disable-dev-shm-usage');
+app.commandLine.appendSwitch('disable-gpu-compositing');
+app.commandLine.appendSwitch('disable-gl-drawing-for-tests');
 
 async function handleFirstRun() {
   try {
@@ -71,7 +73,9 @@ function createWindow() {
   
   mainWindow.loadFile(indexPath).catch(err => {
     console.error('[MAIN] Failed to load index.html:', err);
-    mainWindow.loadURL(`data:text/html,<h1>Synk App</h1><p>Error loading app</p>`);
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.loadURL(`data:text/html,<h1>Synk App</h1><p>Error loading app</p>`);
+    }
   });
 
   mainWindow.once('ready-to-show', () => {
@@ -431,6 +435,14 @@ if (!gotTheLock) {
 }
 
 app.whenReady().then(async () => {
+  try {
+    const cacheDir = path.join(app.getPath('userData'), 'cache');
+    app.getPath('sessionData');
+    await app.setPath('cache', cacheDir);
+  } catch (e) {
+    console.log('[MAIN] Cache path note:', e.message);
+  }
+  
   await handleFirstRun();
   console.log('[MAIN] ✅ App ready, creating window');
   try {
