@@ -66,7 +66,7 @@ function createWindow() {
       contextIsolation: true,
       preload: path.join(__dirname, 'preload.js'),
       enableRemoteModule: false,
-      sandbox: true
+      sandbox: false
     }
   });
 
