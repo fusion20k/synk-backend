@@ -87,17 +87,23 @@ app.get('/stripe/ping', (req, res) => {
 
       async function applySubscriptionToUser({ priceId, status, customerId, emailHint }) {
         if (!stripe || !supabase) return;
+        console.log('[Stripe] applySubscriptionToUser called:', { priceId, status, customerId, emailHint });
+        
         let email = emailHint || null;
+        let stripeCustomer = null;
+        
         try {
-          if (!email && customerId) {
-            const customer = await stripe.customers.retrieve(customerId);
-            email = customer && (customer.email || customer.billing_details?.email || customer.shipping?.email);
+          if (customerId) {
+            stripeCustomer = await stripe.customers.retrieve(customerId);
+            email = email || stripeCustomer.email || stripeCustomer.billing_details?.email || stripeCustomer.shipping?.email;
+            console.log('[Stripe] Retrieved customer:', { id: customerId, email });
           }
         } catch (e) {
-          console.warn('[Stripe] Failed to retrieve customer for email mapping:', e.message);
+          console.warn('[Stripe] Failed to retrieve customer:', e.message);
         }
+        
         if (!email) {
-          console.warn('[Stripe] No email resolved for subscription mapping');
+          console.error('[Stripe] CRITICAL: No email resolved for subscription mapping. customerId:', customerId);
           return;
         }
 
@@ -107,33 +113,58 @@ app.get('/stripe/ping', (req, res) => {
           return;
         }
 
-        // Ensure user exists; if not, pre-create placeholder row so order doesn't matter
+        // Try to find user by stripe_customer_id first, then email
         let userRow = null;
         try {
-          userRow = await getUserByEmail(email);
+          if (customerId) {
+            const { data } = await supabase.from('users').select('*').eq('stripe_customer_id', customerId).maybeSingle();
+            userRow = data;
+            console.log('[Stripe] User lookup by stripe_customer_id:', customerId, userRow ? 'FOUND' : 'NOT FOUND');
+          }
+          
+          if (!userRow) {
+            userRow = await getUserByEmail(email);
+            console.log('[Stripe] User lookup by email:', email, userRow ? 'FOUND' : 'NOT FOUND');
+          }
         } catch (e) {
           console.error('[Stripe] getUserByEmail error:', e.message);
         }
+        
         if (!userRow) {
           try {
-            await insertUser({ email, password_hash: null, plan: "free" });
-            console.log('[Stripe] Placeholder user created for', email);
+            await insertUser({ email, password_hash: null, plan: "free", stripe_customer_id: customerId });
+            console.log('[Stripe] Placeholder user created for', email, 'with stripe_customer_id:', customerId);
           } catch (e) {
             console.error('[Stripe] insertUser error:', e.message);
           }
         }
 
-        // If subscription is active, set plan; if canceled/unpaid, revert to free
+        // Update user with plan, billing period, trial status, and stripe_customer_id
         try {
           if (status === 'active' || status === 'trialing' || status === 'past_due') {
-            await updateUser(email, { plan: mapping.plan, billing_period: mapping.billing_period });
-            console.log('[Stripe] Plan set for', email, mapping.plan, mapping.billing_period);
+            const updateData = { 
+              plan: mapping.plan, 
+              billing_period: mapping.billing_period,
+              stripe_customer_id: customerId
+            };
+            
+            // Handle trial status
+            if (status === 'trialing') {
+              updateData.is_trial = true;
+              console.log('[Stripe] Setting is_trial = true for', email);
+            } else if (status === 'active') {
+              updateData.is_trial = false;
+              console.log('[Stripe] Setting is_trial = false for', email);
+            }
+            
+            await updateUser(email, updateData);
+            console.log('[Stripe] ✓ Plan updated for', email, ':', mapping.plan, mapping.billing_period, 'status:', status, 'is_trial:', updateData.is_trial);
           } else {
-            await updateUser(email, { plan: 'free', billing_period: null });
-            console.log('[Stripe] Plan reverted to free for', email, status);
+            await updateUser(email, { plan: 'free', billing_period: null, is_trial: null });
+            console.log('[Stripe] Plan reverted to free for', email, 'status:', status);
           }
         } catch (e) {
-          console.error('[Stripe] updateUser error:', e.message);
+          console.error('[Stripe] updateUser FAILED:', e.message, 'for email:', email);
         }
       }
 
@@ -189,6 +220,10 @@ app.get('/stripe/ping', (req, res) => {
 
 // JSON parser for remaining routes
 app.use(express.json());
+
+// Version check middleware
+const versionCheckMiddleware = require('./src/versionMiddleware');
+app.use(versionCheckMiddleware);
 
 // OAuth2 client setup
 const BACKEND_URL = process.env.BACKEND_URL || 'https://synk-web.onrender.com';
@@ -276,20 +311,21 @@ app.get('/_health', (req, res) => res.json({ ok: true, host: BACKEND_URL }));
 // Signup
 app.post('/signup', async (req, res) => {
   try {
-    const { email } = req.body || {};
-    if (!email) return res.status(400).json({ success: false, error: 'missing_params' });
+    const { email, password } = req.body || {};
+    if (!email || !password) return res.status(400).json({ success: false, error: 'missing_params' });
 
     const existing = await getUserByEmail(email);
     if (existing) {
       return res.status(409).json({ success: false, error: 'user_exists' });
     }
 
-    const trial_end = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString();
-    const row = { email, plan: 'pro', billing_period: 'trial', trial_end };
+    const password_hash = await bcrypt.hash(password, 10);
+
+    const row = { email, password_hash, plan: 'free' };
     await insertUser(row);
 
     const token = jwt.sign({ email }, JWT_SECRET, { expiresIn: '30d' });
-    return res.json({ success: true, token, user: { email } });
+    return res.json({ success: true, token, user: { email }, ...req.versionInfo });
   } catch (e) {
     console.error('[POST /signup] Error:', e.message);
     return res.status(500).json({ success: false, error: 'server_error' });
@@ -299,18 +335,23 @@ app.post('/signup', async (req, res) => {
 // Login
 app.post('/login', async (req, res) => {
   try {
-    const { email } = req.body || {};
-    if (!email) return res.status(400).json({ success: false, error: 'missing_params' });
+    const { email, password } = req.body || {};
+    if (!email || !password) return res.status(400).json({ success: false, error: 'missing_params' });
 
-    let userRow = await getUserByEmail(email);
-    if (!userRow) {
-      const trial_end = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString();
-      await insertUser({ email, plan: 'pro', billing_period: 'trial', trial_end });
-      userRow = await getUserByEmail(email);
+    const userRow = await getUserByEmail(email);
+    if (!userRow) return res.status(401).json({ success: false, error: 'invalid_credentials' });
+
+    // If user exists from webhook placeholder (no password yet), allow first login to set password
+    if (!userRow.password_hash) {
+      const password_hash = await bcrypt.hash(password, 10);
+      await updateUser(email, { password_hash });
     }
 
+    const ok = await bcrypt.compare(password, userRow.password_hash || password); // if freshly set above, this will also pass
+    if (!ok) return res.status(401).json({ success: false, error: 'invalid_credentials' });
+
     const token = jwt.sign({ email }, JWT_SECRET, { expiresIn: '30d' });
-    return res.json({ success: true, token, user: { email } });
+    return res.json({ success: true, token, user: { email }, ...req.versionInfo });
   } catch (e) {
     console.error('[POST /login] Error:', e.message);
     return res.status(500).json({ success: false, error: 'server_error' });
@@ -336,7 +377,13 @@ app.get('/me', authMiddleware, async (req, res) => {
     if (!u) return res.status(404).json({ success: false, error: 'user_not_found' });
 
     const plan = u.plan ? { type: u.plan, billingCycle: u.billing_period } : null;
-    return res.json({ success: true, email, plan, billing_period: u.billing_period });
+    return res.json({ 
+      success: true, 
+      email, 
+      plan, 
+      billing_period: u.billing_period,
+      ...req.versionInfo
+    });
   } catch (e) {
     console.error('[GET /me] Error:', e.message);
     return res.status(500).json({ success: false, error: 'server_error' });
