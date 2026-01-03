@@ -85,9 +85,9 @@ app.get('/stripe/ping', (req, res) => {
       if (PRICE_IDS.PRO_MONTHLY) PRICE_TO_PLAN[PRICE_IDS.PRO_MONTHLY] = { plan: 'pro', billing_period: 'monthly' };
       if (PRICE_IDS.PRO_YEARLY) PRICE_TO_PLAN[PRICE_IDS.PRO_YEARLY] = { plan: 'pro', billing_period: 'yearly' };
 
-      async function applySubscriptionToUser({ priceId, status, customerId, emailHint }) {
+      async function applySubscriptionToUser({ priceId, status, customerId, emailHint, trialEnd }) {
         if (!stripe || !supabase) return;
-        console.log('[Stripe] applySubscriptionToUser called:', { priceId, status, customerId, emailHint });
+        console.log('[Stripe] applySubscriptionToUser called:', { priceId, status, customerId, emailHint, trialEnd });
         
         let email = emailHint || null;
         let stripeCustomer = null;
@@ -139,7 +139,7 @@ app.get('/stripe/ping', (req, res) => {
           }
         }
 
-        // Update user with plan, billing period, trial status, and stripe_customer_id
+        // Update user with plan, billing period, trial status, trial days remaining, and stripe_customer_id
         try {
           if (status === 'active' || status === 'trialing' || status === 'past_due') {
             const updateData = { 
@@ -148,19 +148,33 @@ app.get('/stripe/ping', (req, res) => {
               stripe_customer_id: customerId
             };
             
-            // Handle trial status
+            // Handle trial status and calculate days remaining
+            console.log('[Stripe] Trial check - status:', status, 'trialEnd:', trialEnd);
             if (status === 'trialing') {
               updateData.is_trial = true;
-              console.log('[Stripe] Setting is_trial = true for', email);
+              if (trialEnd) {
+                // Calculate days remaining from trial_end timestamp
+                const trialEndDate = new Date(trialEnd * 1000); // Stripe uses Unix timestamp in seconds
+                const now = new Date();
+                const daysRemaining = Math.max(0, Math.ceil((trialEndDate - now) / (1000 * 60 * 60 * 24)));
+                updateData.trial_days_remaining = daysRemaining;
+                console.log('[Stripe] Setting is_trial = true, trial_days_remaining =', daysRemaining, 'for', email, '(trial ends:', trialEndDate.toISOString(), ')');
+              } else {
+                console.warn('[Stripe] Status is trialing but no trial_end provided!');
+                updateData.trial_days_remaining = null;
+              }
             } else if (status === 'active') {
               updateData.is_trial = false;
-              console.log('[Stripe] Setting is_trial = false for', email);
+              updateData.trial_days_remaining = null;
+              console.log('[Stripe] Setting is_trial = false, clearing trial_days_remaining for', email);
+            } else {
+              console.log('[Stripe] Status is', status, '- not setting trial info');
             }
             
             await updateUser(email, updateData);
-            console.log('[Stripe] ✓ Plan updated for', email, ':', mapping.plan, mapping.billing_period, 'status:', status, 'is_trial:', updateData.is_trial);
+            console.log('[Stripe] ✓ Plan updated for', email, ':', mapping.plan, mapping.billing_period, 'status:', status, 'is_trial:', updateData.is_trial, 'trial_days_remaining:', updateData.trial_days_remaining);
           } else {
-            await updateUser(email, { plan: 'free', billing_period: null, is_trial: null });
+            await updateUser(email, { plan: 'free', billing_period: null, is_trial: null, trial_days_remaining: null });
             console.log('[Stripe] Plan reverted to free for', email, 'status:', status);
           }
         } catch (e) {
@@ -173,12 +187,12 @@ app.get('/stripe/ping', (req, res) => {
           const session = event.data.object;
           // Try to get email from session first
           const emailHint = session.customer_details?.email || session.customer_email || null;
-          // Retrieve subscription to get price ID
+          // Retrieve subscription to get price ID and trial info
           if (session.subscription) {
             const sub = await stripe.subscriptions.retrieve(session.subscription);
             const item = sub.items && sub.items.data && sub.items.data[0];
             const priceId = item && item.price && item.price.id;
-            await applySubscriptionToUser({ customerId: session.customer, priceId, status: sub.status, emailHint });
+            await applySubscriptionToUser({ customerId: session.customer, priceId, status: sub.status, emailHint, trialEnd: sub.trial_end });
           }
           break;
         }
@@ -191,7 +205,7 @@ app.get('/stripe/ping', (req, res) => {
           const item = sub.items && sub.items.data && sub.items.data[0];
           const priceId = item && item.price && item.price.id;
           // For these events, we only have customer ID; email is fetched inside
-          await applySubscriptionToUser({ customerId: sub.customer, priceId, status: sub.status });
+          await applySubscriptionToUser({ customerId: sub.customer, priceId, status: sub.status, trialEnd: sub.trial_end });
           break;
         }
         case 'invoice.paid': {
@@ -201,7 +215,7 @@ app.get('/stripe/ping', (req, res) => {
             const sub = await stripe.subscriptions.retrieve(inv.subscription);
             const item = sub.items && sub.items.data && sub.items.data[0];
             const priceId = item && item.price && item.price.id;
-            await applySubscriptionToUser({ customerId: sub.customer, priceId, status: sub.status, emailHint });
+            await applySubscriptionToUser({ customerId: sub.customer, priceId, status: sub.status, emailHint, trialEnd: sub.trial_end });
           }
           break;
         }
@@ -369,12 +383,131 @@ app.get('/debug/plan/:email', async (req, res) => {
   }
 });
 
+// Debug endpoint to sync trial status from Stripe
+app.get('/debug/sync-trial/:email', async (req, res) => {
+  try {
+    const { email } = req.params;
+    const u = await getUserByEmail(email);
+    
+    if (!u) {
+      return res.status(404).json({ ok: false, error: 'User not found' });
+    }
+    
+    if (!u.stripe_customer_id) {
+      return res.status(400).json({ ok: false, error: 'No stripe_customer_id for user' });
+    }
+    
+    // Fetch subscriptions from Stripe
+    const subscriptions = await stripe.subscriptions.list({
+      customer: u.stripe_customer_id,
+      limit: 10
+    });
+    
+    console.log('[Debug] Found', subscriptions.data.length, 'subscriptions for', email);
+    
+    // Find active or trialing subscription
+    const activeSub = subscriptions.data.find(sub => 
+      sub.status === 'active' || sub.status === 'trialing'
+    );
+    
+    if (!activeSub) {
+      return res.json({ 
+        ok: true, 
+        message: 'No active subscription found',
+        subscriptions: subscriptions.data.map(s => ({ id: s.id, status: s.status, trial_end: s.trial_end }))
+      });
+    }
+    
+    const updateData = {};
+    
+    if (activeSub.status === 'trialing' && activeSub.trial_end) {
+      const trialEndDate = new Date(activeSub.trial_end * 1000);
+      const now = new Date();
+      const daysRemaining = Math.max(0, Math.ceil((trialEndDate - now) / (1000 * 60 * 60 * 24)));
+      
+      updateData.is_trial = true;
+      updateData.trial_days_remaining = daysRemaining;
+      
+      await updateUser(email, updateData);
+      
+      return res.json({
+        ok: true,
+        message: 'Trial synced successfully',
+        subscription: {
+          id: activeSub.id,
+          status: activeSub.status,
+          trial_end: activeSub.trial_end,
+          trial_end_date: trialEndDate.toISOString(),
+          days_remaining: daysRemaining
+        },
+        updated: updateData
+      });
+    } else if (activeSub.status === 'active') {
+      updateData.is_trial = false;
+      updateData.trial_days_remaining = null;
+      
+      await updateUser(email, updateData);
+      
+      return res.json({
+        ok: true,
+        message: 'Subscription is active (not trialing)',
+        subscription: {
+          id: activeSub.id,
+          status: activeSub.status
+        },
+        updated: updateData
+      });
+    }
+    
+    return res.json({
+      ok: true,
+      message: 'Unexpected subscription status',
+      subscription: {
+        id: activeSub.id,
+        status: activeSub.status,
+        trial_end: activeSub.trial_end
+      }
+    });
+    
+  } catch (e) {
+    console.error('[Debug] Sync trial error:', e);
+    return res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
 // /me - plan source of truth
 app.get('/me', authMiddleware, async (req, res) => {
   try {
     const email = req.user.email;
-    const u = await getUserByEmail(email);
+    let u = await getUserByEmail(email);
     if (!u) return res.status(404).json({ success: false, error: 'user_not_found' });
+
+    // Auto-sync trial days if user is on trial but days remaining is null
+    if (stripe && u.is_trial && u.trial_days_remaining === null && u.stripe_customer_id) {
+      try {
+        console.log('[GET /me] Auto-syncing trial days for', email);
+        const subscriptions = await stripe.subscriptions.list({
+          customer: u.stripe_customer_id,
+          status: 'trialing',
+          limit: 1
+        });
+        
+        if (subscriptions.data.length > 0 && subscriptions.data[0].trial_end) {
+          const trialEndDate = new Date(subscriptions.data[0].trial_end * 1000);
+          const now = new Date();
+          const daysRemaining = Math.max(0, Math.ceil((trialEndDate - now) / (1000 * 60 * 60 * 24)));
+          
+          await updateUser(email, { trial_days_remaining: daysRemaining });
+          console.log('[GET /me] Synced trial_days_remaining:', daysRemaining);
+          
+          // Refresh user data
+          u = await getUserByEmail(email);
+        }
+      } catch (err) {
+        console.error('[GET /me] Trial sync error:', err.message);
+        // Continue anyway, don't fail the request
+      }
+    }
 
     const plan = u.plan ? { type: u.plan, billingCycle: u.billing_period } : null;
     return res.json({ 
@@ -382,6 +515,8 @@ app.get('/me', authMiddleware, async (req, res) => {
       email, 
       plan, 
       billing_period: u.billing_period,
+      is_trial: u.is_trial || false,
+      trial_days_remaining: u.trial_days_remaining || null,
       ...req.versionInfo
     });
   } catch (e) {
