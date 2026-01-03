@@ -482,10 +482,9 @@ app.get('/me', authMiddleware, async (req, res) => {
     let u = await getUserByEmail(email);
     if (!u) return res.status(404).json({ success: false, error: 'user_not_found' });
 
-    // Auto-sync trial days if user is on trial but days remaining is null
-    if (stripe && u.is_trial && u.trial_days_remaining === null && u.stripe_customer_id) {
+    // Auto-sync trial days if user is on trial - recalculate every time for accuracy
+    if (stripe && u.is_trial && u.stripe_customer_id) {
       try {
-        console.log('[GET /me] Auto-syncing trial days for', email);
         const subscriptions = await stripe.subscriptions.list({
           customer: u.stripe_customer_id,
           status: 'trialing',
@@ -497,11 +496,12 @@ app.get('/me', authMiddleware, async (req, res) => {
           const now = new Date();
           const daysRemaining = Math.max(0, Math.ceil((trialEndDate - now) / (1000 * 60 * 60 * 24)));
           
-          await updateUser(email, { trial_days_remaining: daysRemaining });
-          console.log('[GET /me] Synced trial_days_remaining:', daysRemaining);
-          
-          // Refresh user data
-          u = await getUserByEmail(email);
+          // Update database if changed
+          if (u.trial_days_remaining !== daysRemaining) {
+            await updateUser(email, { trial_days_remaining: daysRemaining });
+            console.log('[GET /me] Updated trial_days_remaining:', daysRemaining);
+            u.trial_days_remaining = daysRemaining;
+          }
         }
       } catch (err) {
         console.error('[GET /me] Trial sync error:', err.message);
