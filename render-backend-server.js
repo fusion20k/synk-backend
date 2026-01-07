@@ -78,12 +78,14 @@ app.get('/stripe/ping', (req, res) => {
         FREE_YEARLY: process.env.STRIPE_PRICE_FREE_YEARLY || process.env.FREE_YEARLY_PRICE || '',
         PRO_MONTHLY: process.env.STRIPE_PRICE_PRO_MONTHLY || process.env.PRO_MONTHLY_PRICE || '',
         PRO_YEARLY: process.env.STRIPE_PRICE_PRO_YEARLY || process.env.PRO_YEARLY_PRICE || '',
+        PRO_MONTHLY_30DAY: process.env.STRIPE_PRICE_PRO_MONTHLY_30DAY || '',
       };
       const PRICE_TO_PLAN = {};
       if (PRICE_IDS.FREE_MONTHLY) PRICE_TO_PLAN[PRICE_IDS.FREE_MONTHLY] = { plan: 'free', billing_period: 'monthly' };
       if (PRICE_IDS.FREE_YEARLY) PRICE_TO_PLAN[PRICE_IDS.FREE_YEARLY] = { plan: 'free', billing_period: 'yearly' };
       if (PRICE_IDS.PRO_MONTHLY) PRICE_TO_PLAN[PRICE_IDS.PRO_MONTHLY] = { plan: 'pro', billing_period: 'monthly' };
       if (PRICE_IDS.PRO_YEARLY) PRICE_TO_PLAN[PRICE_IDS.PRO_YEARLY] = { plan: 'pro', billing_period: 'yearly' };
+      if (PRICE_IDS.PRO_MONTHLY_30DAY) PRICE_TO_PLAN[PRICE_IDS.PRO_MONTHLY_30DAY] = { plan: 'pro', billing_period: 'monthly' };
 
       async function applySubscriptionToUser({ priceId, status, customerId, emailHint, trialEnd }) {
         if (!stripe || !supabase) return;
