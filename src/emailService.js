@@ -1,45 +1,27 @@
 // Email Service Module for Synk Auto-Trial System
-// Handles transactional email sending via Nodemailer
+// Handles transactional email sending via Resend
 
-const nodemailer = require('nodemailer');
+const { Resend } = require('resend');
 const emailTemplates = require('./emailTemplates');
 
-// Create reusable transporter
-let transporter = null;
+let resend = null;
 
-function getTransporter() {
-  if (transporter) {
-    return transporter;
+function getResendClient() {
+  if (resend) {
+    return resend;
   }
 
-  const smtpConfig = {
-    host: process.env.SMTP_HOST,
-    port: parseInt(process.env.SMTP_PORT || '587'),
-    secure: process.env.SMTP_PORT === '465', // true for 465, false for other ports
-    auth: {
-      user: process.env.SMTP_USER,
-      pass: process.env.SMTP_PASS
-    }
-  };
+  const apiKey = process.env.RESEND_API_KEY;
 
-  // Validate SMTP config
-  if (!smtpConfig.host || !smtpConfig.auth.user || !smtpConfig.auth.pass) {
-    console.warn('[EmailService] SMTP not configured. Emails will be logged but not sent.');
+  if (!apiKey) {
+    console.warn('[EmailService] Resend not configured. Emails will be logged but not sent.');
     return null;
   }
 
-  transporter = nodemailer.createTransport(smtpConfig);
+  resend = new Resend(apiKey);
+  console.log('[EmailService] Resend client initialized');
   
-  // Verify connection on first use
-  transporter.verify((error) => {
-    if (error) {
-      console.error('[EmailService] SMTP connection failed:', error.message);
-    } else {
-      console.log('[EmailService] SMTP connection verified');
-    }
-  });
-
-  return transporter;
+  return resend;
 }
 
 /**
@@ -51,7 +33,6 @@ function getTransporter() {
  */
 async function sendEmail(to, templateId, variables = {}) {
   try {
-    // Get template
     const template = emailTemplates[templateId];
     if (!template) {
       throw new Error(`Unknown email template: ${templateId}`);
@@ -59,30 +40,30 @@ async function sendEmail(to, templateId, variables = {}) {
 
     const { subject, html } = template(variables);
 
-    // Check if SMTP is configured
-    const smtp = getTransporter();
-    if (!smtp) {
-      console.log(`[EmailService] MOCK EMAIL (SMTP not configured):`);
+    const resendClient = getResendClient();
+    if (!resendClient) {
+      console.log(`[EmailService] MOCK EMAIL (Resend not configured):`);
       console.log(`  To: ${to}`);
       console.log(`  Template: ${templateId}`);
       console.log(`  Subject: ${subject}`);
       console.log(`  Variables:`, variables);
-      return; // Don't actually send
+      return;
     }
 
-    // Send email
-    const mailOptions = {
-      from: process.env.SMTP_FROM || 'noreply@synk-official.com',
-      to: to,
+    const { data, error } = await resendClient.emails.send({
+      from: process.env.RESEND_FROM || 'Synk <onboarding@resend.dev>',
+      to: [to],
       subject: subject,
       html: html
-    };
+    });
 
-    const info = await smtp.sendMail(mailOptions);
-    console.log(`[EmailService] ✓ Email sent to ${to} (${templateId}):`, info.messageId);
+    if (error) {
+      throw new Error(error.message);
+    }
+
+    console.log(`[EmailService] ✓ Email sent to ${to} (${templateId}):`, data.id);
   } catch (error) {
     console.error(`[EmailService] ✗ Failed to send email to ${to} (${templateId}):`, error.message);
-    // Don't throw - we don't want email failures to break core functionality
   }
 }
 
