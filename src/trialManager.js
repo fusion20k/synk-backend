@@ -11,7 +11,7 @@ const TRIAL_DURATION_DAYS = parseInt(process.env.TRIAL_DURATION_DAYS || '7');
  */
 async function checkIpTrialAbuse(signupIp, supabase) {
   if (!signupIp) {
-    // No IP provided, can't check abuse
+    console.log('[checkIpTrialAbuse] No IP provided, allowing trial');
     return false;
   }
 
@@ -24,12 +24,14 @@ async function checkIpTrialAbuse(signupIp, supabase) {
       .limit(1);
 
     if (error) {
-      console.error('[checkIpTrialAbuse] Error:', error.message);
+      console.error('[checkIpTrialAbuse] Database error:', error.message);
+      console.error('[checkIpTrialAbuse] This likely means signup_ip column does not exist. Apply migrations!');
       return false; // On error, allow trial (fail open)
     }
 
-    // If we found a user with this IP and trial plan, it's abuse
-    return data && data.length > 0;
+    const isAbuse = data && data.length > 0;
+    console.log(`[checkIpTrialAbuse] IP ${signupIp} abuse check: ${isAbuse ? 'ABUSE DETECTED' : 'OK'}`);
+    return isAbuse;
   } catch (err) {
     console.error('[checkIpTrialAbuse] Exception:', err.message);
     return false; // On exception, allow trial (fail open)

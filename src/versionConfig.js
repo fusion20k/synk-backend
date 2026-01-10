@@ -6,14 +6,24 @@ const CACHE_DURATION = 10 * 60 * 1000;
 
 async function fetchLatestVersion() {
   try {
+    const headers = {
+      'User-Agent': 'Synk-Backend'
+    };
+    
+    if (process.env.GITHUB_TOKEN) {
+      headers['Authorization'] = `Bearer ${process.env.GITHUB_TOKEN}`;
+    }
+    
     const response = await fetch('https://api.github.com/repos/fusion20k/synk-web/releases/latest', {
-      headers: {
-        'User-Agent': 'Synk-Backend'
-      }
+      headers
     });
     
     if (!response.ok) {
-      console.warn('[VersionConfig] Failed to fetch latest release:', response.status);
+      if (response.status === 403) {
+        console.warn('[VersionConfig] GitHub API rate limit exceeded. Using cached version:', cachedLatestVersion);
+      } else {
+        console.warn('[VersionConfig] Failed to fetch latest release:', response.status);
+      }
       return cachedLatestVersion;
     }
     

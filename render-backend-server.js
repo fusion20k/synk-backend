@@ -363,6 +363,40 @@ app.get('/', (req, res) => {
 // Health check endpoint
 app.get('/_health', (req, res) => res.json({ ok: true, host: BACKEND_URL }));
 
+// Database schema check endpoint
+app.get('/_schema-check', async (req, res) => {
+  try {
+    if (!supabase) {
+      return res.json({ ok: false, error: 'Supabase not configured' });
+    }
+
+    const { data: testUser, error } = await supabase
+      .from('users')
+      .select('id, email, plan, trial_started_at, trial_ends_at, signup_ip')
+      .limit(1);
+
+    if (error) {
+      return res.json({
+        ok: false,
+        error: error.message,
+        hint: 'Migrations may not be applied. Check if signup_ip, trial_started_at, trial_ends_at columns exist.'
+      });
+    }
+
+    return res.json({
+      ok: true,
+      message: 'Schema check passed',
+      columns_exist: ['id', 'email', 'plan', 'trial_started_at', 'trial_ends_at', 'signup_ip'],
+      sample_count: testUser?.length || 0
+    });
+  } catch (err) {
+    return res.json({
+      ok: false,
+      error: err.message
+    });
+  }
+});
+
 // Signup
 app.post('/signup', async (req, res) => {
   try {
@@ -377,10 +411,10 @@ app.post('/signup', async (req, res) => {
     const password_hash = await bcrypt.hash(password, 10);
 
     const signupIp = req.ip || req.headers['x-forwarded-for'] || req.connection.remoteAddress || null;
-    console.log(`[POST /signup] New signup from IP: ${signupIp}`);
+    console.log(`[POST /signup] New signup: ${email} from IP: ${signupIp}`);
 
     const trialAssignment = await assignTrialToUser(email, signupIp, supabase);
-    console.log(`[POST /signup] Trial assignment result:`, trialAssignment);
+    console.log(`[POST /signup] Trial assignment for ${email}:`, JSON.stringify(trialAssignment, null, 2));
 
     const row = { 
       email, 
@@ -390,7 +424,10 @@ app.post('/signup', async (req, res) => {
       trial_ends_at: trialAssignment.trial_ends_at,
       signup_ip: signupIp
     };
+    
+    console.log(`[POST /signup] Inserting user with data:`, JSON.stringify(row, null, 2));
     await insertUser(row);
+    console.log(`[POST /signup] ✓ User ${email} created with plan: ${trialAssignment.plan}`);
 
     if (trialAssignment.plan === 'trial') {
       const daysRemaining = parseInt(process.env.TRIAL_DURATION_DAYS || '7');
@@ -412,7 +449,8 @@ app.post('/signup', async (req, res) => {
     });
   } catch (e) {
     console.error('[POST /signup] Error:', e.message);
-    return res.status(500).json({ success: false, error: 'server_error' });
+    console.error('[POST /signup] Stack:', e.stack);
+    return res.status(500).json({ success: false, error: 'server_error', message: e.message });
   }
 });
 
