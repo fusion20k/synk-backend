@@ -5,7 +5,6 @@ const fetch = require('node-fetch');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const Stripe = require('stripe');
-const { rateLimit } = require('express-rate-limit');
 require('dotenv').config();
 
 const { checkProAccess, requireProAccess } = require('./src/accessControl');
@@ -313,18 +312,6 @@ const supabase = (SUPABASE_URL && SUPABASE_SERVICE_ROLE_KEY)
   : null;
 if (!supabase) console.warn('[Supabase] Not configured');
 
-// Supabase Admin client for email verification (uses service_role key)
-const supabaseAdmin = (SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY)
-  ? createClient(SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY, { 
-      auth: { 
-        persistSession: false,
-        autoRefreshToken: false
-      } 
-    })
-  : null;
-if (!supabaseAdmin) console.warn('[Supabase Admin] Not configured - email verification will not work');
-else console.log('[Supabase Admin] Initialized with service role key');
-
 const JWT_SECRET = process.env.JWT_SECRET || 'REPLACE_ME';
 function authMiddleware(req, res, next) {
   const auth = req.headers.authorization || '';
@@ -416,46 +403,50 @@ app.post('/signup', async (req, res) => {
     const { email, password } = req.body || {};
     if (!email || !password) return res.status(400).json({ success: false, error: 'missing_params' });
 
-    if (!supabaseAdmin) {
-      console.error('[POST /signup] Supabase Admin not configured');
-      return res.status(500).json({ success: false, error: 'server_error', message: 'Email verification not configured' });
+    const existing = await getUserByEmail(email);
+    if (existing) {
+      return res.status(409).json({ success: false, error: 'user_exists' });
     }
 
-    // Check if user already exists in Supabase Auth
-    const { data: authUserData } = await supabaseAdmin.auth.admin.getUserByEmail(email);
-    if (authUserData && authUserData.user) {
-      return res.status(409).json({ 
-        success: false, 
-        error: 'user_exists',
-        message: 'An account with this email already exists'
-      });
+    const password_hash = await bcrypt.hash(password, 10);
+
+    const signupIp = req.ip || req.headers['x-forwarded-for'] || req.connection.remoteAddress || null;
+    console.log(`[POST /signup] New signup: ${email} from IP: ${signupIp}`);
+
+    const trialAssignment = await assignTrialToUser(email, signupIp, supabase);
+    console.log(`[POST /signup] Trial assignment for ${email}:`, JSON.stringify(trialAssignment, null, 2));
+
+    const row = { 
+      email, 
+      password_hash, 
+      plan: trialAssignment.plan,
+      trial_started_at: trialAssignment.trial_started_at,
+      trial_ends_at: trialAssignment.trial_ends_at,
+      signup_ip: signupIp
+    };
+    
+    console.log(`[POST /signup] Inserting user with data:`, JSON.stringify(row, null, 2));
+    await insertUser(row);
+    console.log(`[POST /signup] ✓ User ${email} created with plan: ${trialAssignment.plan}`);
+
+    if (trialAssignment.plan === 'trial') {
+      const daysRemaining = parseInt(process.env.TRIAL_DURATION_DAYS || '7');
+      await sendTrialWelcomeEmail(email, daysRemaining, trialAssignment.trial_ends_at);
+      console.log(`[POST /signup] ✓ Sent trial welcome email to ${email}`);
     }
 
-    // Create user in Supabase Auth with email verification required
-    const { data, error } = await supabaseAdmin.auth.admin.createUser({
-      email: email,
-      password: password,
-      email_confirm: false
+    const token = jwt.sign({ email }, JWT_SECRET, { expiresIn: '30d' });
+    return res.json({ 
+      success: true, 
+      token, 
+      user: { 
+        email, 
+        plan: trialAssignment.plan,
+        trial_ends_at: trialAssignment.trial_ends_at
+      }, 
+      trial_message: trialAssignment.message,
+      ...req.versionInfo 
     });
-
-    if (error) {
-      console.error('[POST /signup] Supabase Auth error:', error);
-      return res.status(400).json({ 
-        success: false, 
-        message: error.message 
-      });
-    }
-
-    console.log(`[POST /signup] User created in Supabase Auth: ${email}`);
-
-    // Return success WITHOUT token (they need to verify first)
-    return res.json({
-      success: true,
-      requiresEmailVerification: true,
-      message: "Please check your email to verify your account before logging in.",
-      email: email
-    });
-
   } catch (e) {
     console.error('[POST /signup] Error:', e.message);
     console.error('[POST /signup] Stack:', e.stack);
@@ -469,197 +460,23 @@ app.post('/login', async (req, res) => {
     const { email, password } = req.body || {};
     if (!email || !password) return res.status(400).json({ success: false, error: 'missing_params' });
 
-    if (!supabaseAdmin) {
-      console.error('[POST /login] Supabase Admin not configured');
-      return res.status(500).json({ success: false, error: 'server_error' });
-    }
-
-    // Check email verification status in Supabase Auth
-    const { data: authUserData, error: authError } = await supabaseAdmin.auth.admin.getUserByEmail(email);
-    
-    if (authError) {
-      console.error('[POST /login] Auth lookup error:', authError);
-      return res.status(401).json({ success: false, error: 'invalid_credentials' });
-    }
-
-    const authUser = authUserData?.user;
-    
-    if (!authUser) {
-      return res.status(401).json({ success: false, error: 'invalid_credentials' });
-    }
-
-    // Check if email is verified (allow existing users to bypass)
     const userRow = await getUserByEmail(email);
-    const isExistingUser = !!userRow;
-    
-    if (!isExistingUser && !authUser.email_confirmed_at) {
-      console.log(`[POST /login] Email not verified for new user: ${email}`);
-      return res.status(403).json({ 
-        success: false, 
-        error: 'email_not_verified',
-        message: 'Please verify your email before logging in. Check your inbox for the verification link.',
-        canResend: true
-      });
+    if (!userRow) return res.status(401).json({ success: false, error: 'invalid_credentials' });
+
+    // If user exists from webhook placeholder (no password yet), allow first login to set password
+    if (!userRow.password_hash) {
+      const password_hash = await bcrypt.hash(password, 10);
+      await updateUser(email, { password_hash });
     }
 
-    // Verify password using Supabase Auth signInWithPassword
-    const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({
-      email,
-      password
-    });
-
-    if (signInError || !signInData.user) {
-      console.log(`[POST /login] Invalid credentials for: ${email}`);
-      return res.status(401).json({ success: false, error: 'invalid_credentials' });
-    }
-
-    // If user verified but not in database yet, create user record with trial
-    if (!userRow) {
-      const signupIp = req.ip || req.headers['x-forwarded-for'] || req.connection.remoteAddress || null;
-      console.log(`[POST /login] Creating user record for verified user: ${email}`);
-
-      const trialAssignment = await assignTrialToUser(email, signupIp, supabase);
-      console.log(`[POST /login] Trial assignment for ${email}:`, JSON.stringify(trialAssignment, null, 2));
-
-      const row = { 
-        email, 
-        password_hash: null,
-        plan: trialAssignment.plan,
-        trial_started_at: trialAssignment.trial_started_at,
-        trial_ends_at: trialAssignment.trial_ends_at,
-        signup_ip: signupIp,
-        email_verified: true
-      };
-      
-      await insertUser(row);
-      console.log(`[POST /login] ✓ User ${email} created with plan: ${trialAssignment.plan}`);
-
-      if (trialAssignment.plan === 'trial') {
-        const daysRemaining = parseInt(process.env.TRIAL_DURATION_DAYS || '7');
-        await sendTrialWelcomeEmail(email, daysRemaining, trialAssignment.trial_ends_at);
-        console.log(`[POST /login] ✓ Sent trial welcome email to ${email}`);
-      }
-    } else if (!userRow.email_verified) {
-      // Mark existing user as verified
-      await updateUser(email, { email_verified: true });
-      console.log(`[POST /login] ✓ Marked existing user as verified: ${email}`);
-    }
+    const ok = await bcrypt.compare(password, userRow.password_hash || password); // if freshly set above, this will also pass
+    if (!ok) return res.status(401).json({ success: false, error: 'invalid_credentials' });
 
     const token = jwt.sign({ email }, JWT_SECRET, { expiresIn: '30d' });
     return res.json({ success: true, token, user: { email }, ...req.versionInfo });
-    
   } catch (e) {
     console.error('[POST /login] Error:', e.message);
     return res.status(500).json({ success: false, error: 'server_error' });
-  }
-});
-
-// Rate limiter for resend verification (3 requests per hour per email)
-const resendLimiter = rateLimit({
-  windowMs: 60 * 60 * 1000,
-  max: 3,
-  message: { 
-    success: false, 
-    error: 'rate_limit_exceeded',
-    message: 'Too many requests. Please try again in 1 hour.'
-  },
-  standardHeaders: true,
-  legacyHeaders: false,
-  keyGenerator: (req) => req.body?.email || req.ip
-});
-
-// Resend verification email
-app.post('/resend-verification', resendLimiter, async (req, res) => {
-  try {
-    const { email } = req.body || {};
-    if (!email) return res.status(400).json({ success: false, error: 'missing_email' });
-
-    if (!supabaseAdmin) {
-      console.error('[POST /resend-verification] Supabase Admin not configured');
-      return res.status(500).json({ success: false, error: 'server_error' });
-    }
-
-    // Check if user exists in Supabase Auth
-    const { data: authUserData, error: authError } = await supabaseAdmin.auth.admin.getUserByEmail(email);
-    
-    if (authError || !authUserData?.user) {
-      console.log(`[POST /resend-verification] User not found: ${email}`);
-      return res.status(404).json({ 
-        success: false, 
-        error: 'user_not_found',
-        message: 'No account found with this email address.'
-      });
-    }
-
-    const authUser = authUserData.user;
-
-    // Check if already verified
-    if (authUser.email_confirmed_at) {
-      console.log(`[POST /resend-verification] Email already verified: ${email}`);
-      return res.status(400).json({ 
-        success: false, 
-        error: 'already_verified',
-        message: 'This email is already verified. You can log in now.'
-      });
-    }
-
-    // Resend verification email using Admin SDK
-    const { data, error: resendError } = await supabaseAdmin.auth.admin.generateLink({
-      type: 'signup',
-      email: email
-    });
-    
-    if (resendError) {
-      console.error('[POST /resend-verification] Resend error:', resendError);
-      return res.status(500).json({ 
-        success: false, 
-        error: 'resend_failed',
-        message: 'Failed to send verification email. Please try again.'
-      });
-    }
-
-    console.log(`[POST /resend-verification] ✓ Verification email resent to: ${email}`);
-    
-    return res.json({
-      success: true,
-      message: 'Verification email sent successfully. Please check your inbox.'
-    });
-
-  } catch (e) {
-    console.error('[POST /resend-verification] Error:', e.message);
-    return res.status(500).json({ success: false, error: 'server_error' });
-  }
-});
-
-// Debug endpoint to check email verification status
-app.get('/verify-status/:email', async (req, res) => {
-  try {
-    const { email } = req.params;
-    
-    if (!supabaseAdmin) {
-      return res.status(500).json({ ok: false, error: 'Supabase Admin not configured' });
-    }
-    
-    const { data: authUserData } = await supabaseAdmin.auth.admin.getUserByEmail(email);
-    const authUser = authUserData?.user;
-    
-    const dbUser = await getUserByEmail(email);
-    
-    return res.json({
-      ok: true,
-      auth: {
-        exists: !!authUser,
-        email_confirmed_at: authUser?.email_confirmed_at || null,
-        is_verified: !!authUser?.email_confirmed_at
-      },
-      database: {
-        exists: !!dbUser,
-        email_verified: dbUser?.email_verified || false,
-        plan: dbUser?.plan || null
-      }
-    });
-  } catch (e) {
-    return res.status(500).json({ ok: false, error: e.message });
   }
 });
 
