@@ -1,0 +1,30 @@
+# Environment variables (contains secrets!)
+.env
+.env.local
+.env.*.local
+
+# Dependencies
+node_modules/
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+
+# Zencoder AI assistant files
+.zencoder/
+
+# Test files (optional - uncomment if you don't want to track them)
+# test-*.sh
+# test-*.js
