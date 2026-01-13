@@ -15,6 +15,13 @@ async function checkIpTrialAbuse(signupIp, supabase) {
     return false;
   }
 
+  // Ignore localhost IPs - they're not real client IPs
+  const localhostIps = ['::1', '127.0.0.1', '::ffff:127.0.0.1', 'localhost'];
+  if (localhostIps.includes(signupIp)) {
+    console.log(`[checkIpTrialAbuse] Localhost IP detected (${signupIp}), skipping abuse check`);
+    return false;
+  }
+
   try {
     const { data, error } = await supabase
       .from('users')

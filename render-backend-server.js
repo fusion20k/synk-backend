@@ -19,6 +19,9 @@ const { initializeCronJobs } = require('./src/cronJobs');
 
 const app = express();
 
+// Trust proxy to get real client IP from X-Forwarded-For header (required for Render)
+app.set('trust proxy', true);
+
 // At top of server file
 const oauthResults = {}; // { state: { tokens, createdAt } }
 console.log('[Server] BACKEND_URL=', process.env.BACKEND_URL || 'NOT SET');
@@ -410,7 +413,15 @@ app.post('/signup', async (req, res) => {
 
     const password_hash = await bcrypt.hash(password, 10);
 
-    const signupIp = req.ip || req.headers['x-forwarded-for'] || req.connection.remoteAddress || null;
+    // Extract real client IP (with trust proxy enabled, req.ip will contain the real IP from X-Forwarded-For)
+    let signupIp = req.ip;
+    
+    // If X-Forwarded-For contains multiple IPs (comma-separated), take the first one (original client)
+    if (req.headers['x-forwarded-for']) {
+      const forwardedIps = req.headers['x-forwarded-for'].split(',').map(ip => ip.trim());
+      signupIp = forwardedIps[0];
+    }
+    
     console.log(`[POST /signup] New signup: ${email} from IP: ${signupIp}`);
 
     const trialAssignment = await assignTrialToUser(email, signupIp, supabase);
