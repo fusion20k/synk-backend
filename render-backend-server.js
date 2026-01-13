@@ -442,8 +442,13 @@ app.post('/signup', async (req, res) => {
 
     if (trialAssignment.plan === 'trial') {
       const daysRemaining = parseInt(process.env.TRIAL_DURATION_DAYS || '7');
-      await sendTrialWelcomeEmail(email, daysRemaining, trialAssignment.trial_ends_at);
-      console.log(`[POST /signup] ✓ Sent trial welcome email to ${email}`);
+      try {
+        await sendTrialWelcomeEmail(email, daysRemaining, trialAssignment.trial_ends_at);
+        console.log(`[POST /signup] ✓ Sent trial welcome email to ${email}`);
+      } catch (emailErr) {
+        console.error(`[POST /signup] ✗ Failed to send welcome email to ${email}:`, emailErr.message);
+        console.error(`[POST /signup] Check RESEND_API_KEY and RESEND_FROM environment variables`);
+      }
     }
 
     const token = jwt.sign({ email }, JWT_SECRET, { expiresIn: '30d' });

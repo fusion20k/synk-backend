@@ -46,35 +46,20 @@ async function checkIpTrialAbuse(signupIp, supabase) {
 }
 
 /**
- * Assign trial to new user or mark as free if IP abuse detected
+ * Assign trial to new user (always assigns trial since users can't delete accounts)
  * @param {string} email - User email
- * @param {string} signupIp - IP address from signup request
+ * @param {string} signupIp - IP address from signup request (logged for analytics)
  * @param {Object} supabase - Supabase client instance
  * @returns {Promise<Object>} Trial assignment result
  */
 async function assignTrialToUser(email, signupIp, supabase) {
   try {
-    // Check for IP abuse
-    const isAbuse = await checkIpTrialAbuse(signupIp, supabase);
-
-    if (isAbuse) {
-      console.log(`[assignTrialToUser] IP abuse detected for ${email} (IP: ${signupIp})`);
-      return {
-        success: true,
-        plan: 'free',
-        trial_started_at: null,
-        trial_ends_at: null,
-        reason: 'ip_already_used',
-        message: 'Trial not available from this location'
-      };
-    }
-
-    // Calculate trial period
+    // Calculate trial period - always assign trial since account deletion is not supported
     const now = new Date();
     const trialStartedAt = now.toISOString();
     const trialEndsAt = new Date(now.getTime() + TRIAL_DURATION_DAYS * 24 * 60 * 60 * 1000).toISOString();
 
-    console.log(`[assignTrialToUser] Assigning trial to ${email} (${TRIAL_DURATION_DAYS} days)`);
+    console.log(`[assignTrialToUser] Assigning trial to ${email} (${TRIAL_DURATION_DAYS} days, IP: ${signupIp})`);
     console.log(`[assignTrialToUser] Trial period: ${trialStartedAt} → ${trialEndsAt}`);
 
     return {
@@ -87,6 +72,7 @@ async function assignTrialToUser(email, signupIp, supabase) {
     };
   } catch (err) {
     console.error('[assignTrialToUser] Error:', err.message);
+    console.error('[assignTrialToUser] Stack:', err.stack);
     // On error, default to free plan (fail safe)
     return {
       success: false,
