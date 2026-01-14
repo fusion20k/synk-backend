@@ -23,18 +23,22 @@ function initializeCronJobs(supabaseInstance) {
   console.log('[CronJobs] Initializing scheduled jobs...');
 
   cron.schedule('0 3 * * *', async () => {
-    console.log('[CronJobs] Running daily trial downgrade job at 3:00 AM UTC');
+    console.log('[CronJobs] Running daily trial downgrade job at 3:00 AM EST');
     await downgradeExpiredTrials();
+  }, {
+    timezone: 'America/New_York'
   });
 
   cron.schedule('0 * * * *', async () => {
     console.log('[CronJobs] Running hourly checkout reminder job');
     await sendCheckoutReminders();
+  }, {
+    timezone: 'America/New_York'
   });
 
   console.log('[CronJobs] ✓ Scheduled jobs initialized:');
-  console.log('[CronJobs]   - Trial downgrade: Daily at 3:00 AM UTC');
-  console.log('[CronJobs]   - Checkout reminders: Hourly');
+  console.log('[CronJobs]   - Trial downgrade: Daily at 3:00 AM EST');
+  console.log('[CronJobs]   - Checkout reminders: Hourly (EST)');
 }
 
 async function downgradeExpiredTrials() {
