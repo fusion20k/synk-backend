@@ -54,12 +54,19 @@ async function checkIpTrialAbuse(signupIp, supabase) {
  */
 async function assignTrialToUser(email, signupIp, supabase) {
   try {
-    // Calculate trial period - always assign trial since account deletion is not supported
+    // Calculate trial period in EST timezone - always assign trial since account deletion is not supported
     const now = new Date();
-    const trialStartedAt = now.toISOString();
-    const trialEndsAt = new Date(now.getTime() + TRIAL_DURATION_DAYS * 24 * 60 * 60 * 1000).toISOString();
+    
+    // Convert to EST by getting the locale string and parsing it back
+    const estDate = new Date(now.toLocaleString('en-US', { timeZone: 'America/New_York' }));
+    const trialStartedAt = estDate.toISOString();
+    
+    // Add trial days to EST date
+    const trialEndDate = new Date(estDate.getTime() + TRIAL_DURATION_DAYS * 24 * 60 * 60 * 1000);
+    const trialEndsAt = trialEndDate.toISOString();
 
     console.log(`[assignTrialToUser] Assigning trial to ${email} (${TRIAL_DURATION_DAYS} days, IP: ${signupIp})`);
+    console.log(`[assignTrialToUser] Current EST: ${estDate.toISOString()}`);
     console.log(`[assignTrialToUser] Trial period: ${trialStartedAt} → ${trialEndsAt}`);
 
     return {
