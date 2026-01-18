@@ -43,11 +43,18 @@ function initializeCronJobs(supabaseInstance) {
 
 async function downgradeExpiredTrials() {
   try {
+    // Get current time in EST
+    const now = new Date();
+    const estNow = new Date(now.toLocaleString('en-US', { timeZone: 'America/New_York' }));
+    const currentTimeISO = estNow.toISOString();
+    
+    console.log(`[CronJobs] Checking for expired trials (current EST: ${currentTimeISO})`);
+
     const { data: expiredUsers, error } = await supabase
       .from('users')
       .select('email, trial_ends_at')
       .eq('plan', 'trial')
-      .lt('trial_ends_at', new Date().toISOString());
+      .lt('trial_ends_at', currentTimeISO);
 
     if (error) {
       console.error('[CronJobs] Error fetching expired trials:', error.message);
@@ -73,7 +80,7 @@ async function downgradeExpiredTrials() {
           continue;
         }
 
-        console.log(`[CronJobs] ✓ Downgraded ${user.email} from trial to free`);
+        console.log(`[CronJobs] ✓ Downgraded ${user.email} from trial to free (expired: ${user.trial_ends_at})`);
 
         await sendTrialExpiredEmail(user.email);
         console.log(`[CronJobs] ✓ Sent trial expired email to ${user.email}`);

@@ -15,7 +15,7 @@ const {
   markCheckoutCompleted, 
   markCheckoutAbandoned 
 } = require('./src/checkoutTracker');
-const { initializeCronJobs } = require('./src/cronJobs');
+const { initializeCronJobs, downgradeExpiredTrials } = require('./src/cronJobs');
 
 const app = express();
 
@@ -909,6 +909,27 @@ app.get('/api/oauth/result', (req, res) => {
   delete oauthResults[state];
   console.log('[API.OAuthResult] returning ready for state:', state);
   return res.status(200).json({ status: 'ready', tokens });
+});
+
+// Manual endpoint to immediately downgrade all expired trials
+app.post('/admin/downgrade-expired-trials', async (req, res) => {
+  try {
+    console.log('[Admin] Manual downgrade of expired trials triggered');
+    
+    if (!supabase) {
+      return res.status(500).json({ success: false, error: 'Supabase not configured' });
+    }
+
+    await downgradeExpiredTrials(supabase);
+    
+    return res.json({ 
+      success: true, 
+      message: 'Expired trials have been processed. Check logs for details.' 
+    });
+  } catch (err) {
+    console.error('[Admin] Error in manual downgrade:', err.message);
+    return res.status(500).json({ success: false, error: err.message });
+  }
 });
 
 // Initialize cron jobs for trial management
